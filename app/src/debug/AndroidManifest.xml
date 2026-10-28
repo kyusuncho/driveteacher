@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Debug-only permissions for the instrumented probes (CameraAccessTest, probe/VehicleSignalProbeTest). -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+
+    <!-- probe/ConsoleClient drives the Virtual Console at http://127.0.0.1:8088 on the device. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- Vehicle SDK domains (normal, install-time). -->
+    <uses-permission android:name="pleos.car.permission.CAR_DRIVE" />
+    <uses-permission android:name="pleos.car.permission.CAR_LIGHTS" />
+    <uses-permission android:name="pleos.car.permission.CAR_SEATS" />
+    <uses-permission android:name="pleos.car.permission.CAR_SAFETY" />
+    <uses-permission android:name="pleos.car.permission.PRIVATE_CAR_SAFETY" />
+    <uses-permission android:name="pleos.car.permission.CAR_WINDOWS" />
+
+    <!-- AAOS properties: CAR_SPEED is dangerous (runtime grant), CAR_POWERTRAIN normal. -->
+    <uses-permission android:name="android.car.permission.CAR_SPEED" />
+    <uses-permission android:name="android.car.permission.CAR_POWERTRAIN" />
+    <!-- signature|privileged on the device: declared only to show a third-party app still cannot read these. -->
+    <uses-permission android:name="android.car.permission.READ_CAR_STEERING" />
+    <uses-permission android:name="android.car.permission.CAR_EXTERIOR_LIGHTS" />
+    <uses-permission android:name="android.car.permission.CONTROL_CAR_SEATS" />
+    <uses-permission android:name="android.car.permission.CAR_MILEAGE" />
+    <uses-permission android:name="android.car.permission.CAR_VENDOR_EXTENSION" />
+
+    <!-- probe/NaviLocationProbeTest: NaviHelper (normal), FusedLocation (dangerous), android.location, Pleos TTS (normal). -->
+    <uses-permission android:name="pleos.car.permission.NAVI_ROUTE" />
+    <uses-permission android:name="pleos.car.permission.NAVI_ROUTE_SEARCH" />
+    <uses-permission android:name="pleos.car.permission.FUSED_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="pleos.car.permission.TTS_SERVICE" />
+
+    <!-- probe/UxAudioProbeTest: heads-up notification while driving (runtime permission since API 33). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <application android:networkSecurityConfig="@xml/probe_network_security_config">
+        <!-- probe/UxAudioProbeTest: DO screen (own task so it is not stacked on the non-DO MainActivity). -->
+        <activity
+            android:name=".probe.DoProbeActivity"
+            android:exported="false"
+            android:taskAffinity="com.kyusun.pleos.probe">
+            <meta-data android:name="distractionOptimized" android:value="true" />
+        </activity>
+    </application>
+</manifest>
