@@ -1,0 +1,35 @@
+# CARLA on Apple Silicon via Docker (amd64 under Rosetta), no GPU.
+# -nullrhi disables rendering: physics, traffic and actor positions still work; camera sensors do not.
+# Use ./run.sh (sets up adb forward + emulator token, starts the server, runs bridge.py).
+services:
+  carla:
+    image: carlasim/carla:0.9.15
+    platform: linux/amd64
+    # Fixed 20 fps time step: under Rosetta the wall clock can step backwards ("negative delta time") and
+    # crash UE4 with signal 11 when it uses variable time steps.
+    command: bash ./CarlaUE4.sh -nullrhi -nosound -carla-rpc-port=2000 -benchmark -fps=20
+    restart: on-failure
+    # ponytail: CARLA under Rosetta will take every core it gets, which starves the Pleos emulator (its
+    # Virtual Console then stalls for seconds). 4 of the M1 Max's 10 cores; lower it if stalls persist.
+    cpus: 4
+    ports:
+      - "2000-2001:2000-2001"
+
+  client:
+    build: .
+    platform: linux/amd64
+    working_dir: /work
+    volumes:
+      - .:/work
+    environment:
+      PYTHONUNBUFFERED: "1"  # stream bridge logs live (run without a TTY)
+      HOST_WORKDIR: ${PWD}  # Mac path of this dir; the emulator writes --record videos there
+      CARLA_HOST: carla
+      # Pleos Virtual Console on the Mac (after `adb forward tcp:8088 tcp:8088`).
+      PLEOS_CONSOLE: http://host.docker.internal:8088
+      # Android emulator console (GPS); 5554 = emulator-5554. run.sh exports the token from
+      # ~/.emulator_console_auth_token (Docker Desktop doesn't share that file with containers).
+      EMULATOR_HOST: host.docker.internal
+      EMULATOR_TOKEN: ${EMULATOR_TOKEN:-}
+    depends_on:
+      - carla
