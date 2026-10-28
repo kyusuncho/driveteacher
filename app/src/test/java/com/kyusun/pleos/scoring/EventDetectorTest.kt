@@ -128,11 +128,9 @@ class EventDetectorTest {
         assertEquals(listOf<DrivingEvent>(), detect(drive))
     }
 
-    /** 8th stage-1 run (10/28 18:50): CARLA autopilot, 98 s, limit and belt unreadable on the emulator. */
     @Test
     fun `recorded CARLA drive`() {
-        val csv = checkNotNull(javaClass.getResource("/carla-drive-1028.csv")).readText()
-        val samples = csv.lines().mapNotNull(::parse)
+        val samples = recordedCarlaDrive()
         val events = detect(samples)
         val startMs = samples.first().tNs / NS_PER_MS
         // CARLA's autopilot is harsher than the real-car figures (PLAN 6절): it pulls away at up to 22 km/h/s
@@ -148,39 +146,7 @@ class EventDetectorTest {
     }
 }
 
-private const val NS_PER_MS = 1_000_000L
-
 private fun detect(samples: List<Sample>): List<DrivingEvent> =
     samples.fold(EventDetector() to listOf<DrivingEvent>()) { (detector, events), sample ->
         detector.next(sample).let { (next, new) -> next to events + new }
     }.second
-
-/** Speeds every 100 ms from [startMs]. */
-private fun speeds(kph: List<Float>, startMs: Long = 0): List<Sample.Speed> = kph.mapIndexed { i, v ->
-    val t = (startMs + i * 100L) * NS_PER_MS
-    Sample.Speed(t, v / 3.6f, t)
-}
-
-/** From [from] to [to] km/h at [perSecond] km/h per second, in 100 ms steps, then 1 s at [to]. */
-private fun ramp(from: Float, to: Float, perSecond: Float): List<Float> {
-    val step = perSecond / 10 * if (to >= from) 1 else -1
-    val n = ((to - from) / step).toInt()
-    return List(n) { from + it * step } + List(10) { to }
-}
-
-private fun belt(buckled: Boolean, atMs: Long) = listOf(Sample.SeatBelt(atMs * NS_PER_MS, buckled))
-private fun buckled() = belt(true, 0)
-private fun limit(kph: Int, atMs: Long = 0) = listOf(Sample.SpeedLimit(atMs * NS_PER_MS, kph))
-
-/** SignalRecordTest's CSV, the lines the detector reads. */
-private fun parse(line: String): Sample? {
-    val f = line.split(",")
-    if (f.size < 3 || line.startsWith("#")) return null
-    val t = f[0].toLong() * NS_PER_MS
-    return when (f[1]) {
-        "speed" -> Sample.Speed(t, f[2].toFloat(), t + (f.getOrNull(3)?.toLong() ?: 0) * NS_PER_MS)
-        "limit" -> Sample.SpeedLimit(t, f[2].toInt())
-        "belt" -> Sample.SeatBelt(t, f[2].toBoolean())
-        else -> null
-    }
-}

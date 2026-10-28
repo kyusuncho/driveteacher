@@ -28,6 +28,14 @@ sealed interface DrivingEvent {
     data class BeltUnreadable(override val tNs: Long) : DrivingEvent
 }
 
+/** Speed as its size: AAOS reports it below zero in reverse. */
+internal val Sample.Speed.kph: Float get() = abs(mps) * KPH_PER_MPS
+
+/** At or above this the car is under way (pulling away, or rolling with the belt off). */
+internal const val MOVING_KPH = 3f
+
+private const val KPH_PER_MPS = 3.6f
+
 /** Defaults are public figures for real cars (PLAN 6절); recalibrate on real drives. */
 data class Thresholds(
     val hardAccelKphPerS: Float = 9.7f,
@@ -63,10 +71,10 @@ data class EventDetector(
     }
 
     private fun onSpeed(s: Sample.Speed): Pair<EventDetector, List<DrivingEvent>> {
-        val kph = kphOf(s)
+        val kph = s.kph
         val window = (recent + s).filter { s.tNs - it.tNs <= MAX_SPAN_NS }
         val rate = window.lastOrNull { s.tNs - it.tNs >= SPAN_NS }
-            ?.let { (kph - kphOf(it)) * NS_PER_S / (s.tNs - it.tNs) }
+            ?.let { (kph - it.kph) * NS_PER_S / (s.tNs - it.tNs) }
         val moving = kph >= MOVING_KPH
         val episodes = listOfNotNull(
             Episode.HARD_ACCEL.takeIf { holdsRate(it, rate, thresholds.hardAccelKphPerS) },
@@ -99,16 +107,12 @@ data class EventDetector(
     private fun holdsRate(episode: Episode, rate: Float?, enter: Float) =
         if (rate == null) episode in ongoing else holds(episode, rate, enter)
 
-    private fun kphOf(s: Sample.Speed) = abs(s.mps) * KPH_PER_MPS
-
     enum class Episode { HARD_ACCEL, HARD_BRAKE, SPEEDING, BELT_OFF }
 
     private companion object {
-        const val KPH_PER_MPS = 3.6f
         const val NS_PER_S = 1_000_000_000f
         const val SPAN_NS = 1_000_000_000L
         const val MAX_SPAN_NS = 1_500_000_000L
-        const val MOVING_KPH = 3f
         const val EXIT_FRACTION = 0.5f
 
         /** Speeding starts half a km/h over the limit and ends half a km/h under it. The bridge's whole km/h come
