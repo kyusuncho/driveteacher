@@ -362,6 +362,7 @@ bridge.py ─① Virtual Console HTTP (8088) ──→ 차속·기어·페달·�
 - 신호 대기: 브레이크를 밟은 채 3초 뒤 N으로 바꾸고, 출발 1초 전에 D로 돌립니다. 회전 30m 전부터 방향지시등을 켭니다. 끝낼 때는 서서히 서서 P로 바꿉니다.
 - 한계: 다른 차를 보지 못해 교통 없이 달립니다. 차로 변경도 하지 않습니다.
 - 결과: `check_signals.sh 120 --driver`로 에뮬레이터까지 연결해 네 번 달렸고, 모두 1단계 비교 PASS였습니다(10/28 23:40~23:55). 리뷰를 반영한 마지막 주행은 빨간불에서 세 번(14·25·20초) 섰고, 매번 3초 뒤 N으로 바꾸고 출발 전에 D로 돌렸습니다. 앱이 본 1초 변화율은 최대 +6.0/−9.0km/h였고, 그 기록을 채점하면 **감점 없이 100점**입니다(`RoadTestTest`, `carla-careful-drive-1028.csv`). 같은 엔진이 자동 주행은 67점으로 채점하므로, 두 주행을 구분합니다.
+- 촬영(10/29 05:40): `check_signals.sh 100 --driver --record recording/careful-1029`로 한 번 더 달리며 CARLA 내려다본 그림과 에뮬레이터 화면을 녹화했습니다(`assets/experiments/carla-careful-drive-1029/`, 168초, 영상과 정지 장면 4장). 출발 위치가 매번 무작위라 경로는 위와 다르고, 신호에서 35초 서며 N으로 기다렸습니다. 1단계 비교 PASS, 앱 기록 채점 **100점**(`carla-careful-drive-1029.csv`도 `RoadTestTest`에 추가). 에뮬레이터 녹화는 최대 180초라 주행을 100초로 줄였습니다(녹화하면 실제 시간이 시뮬레이션의 약 1.35배). 정차 중 에뮬레이터 화면에 뜨는 카메라 팝업은 8초짜리 거리 영상(주차된 SUV)이 반복될 뿐이고 사람은 나오지 않습니다.
 - 남은 것: 감속 최대 −9.0은 급감속 기준 10.8에 여유가 1.8뿐입니다. 서기 직전 마지막 1초가 가장 세므로(CARLA는 낮은 속도에서 브레이크가 세게 듦), 시연 전에 저속 브레이크를 약하게 다듬습니다.
 - 리뷰 반영: 한 번 서기로 한 신호는 노란불에서도, 정지선을 조금 지나쳐도 계속 섭니다. 최대 감속(2.2m/s²)은 가까이서 바뀐 신호에만 쓰고, 제한속도가 낮아질 때는 계획 감속으로 줄입니다.
 - 함께 고친 브리지 문제: 부하로 늦어진 시뮬레이션을 연달아 진행해 따라잡던 방식을 없앴습니다. 따라잡으면 몇 초 동안의 주행이 더 짧은 실제 시간에 몰려, 앱에는 속도가 실제보다 몇 배 빠르게 변한 것으로 보입니다(첫 시도에서 0→22km/h가 1.3초 만에 오름). 이제는 늦어지면 그만큼 주행이 길어집니다. 위 8차 자동 주행의 거친 가감속 중 일부도 이 때문이었을 수 있습니다. 시작할 때 차가 땅에 떨어지며 생기는 수직 속도도 콘솔에 보내지 않습니다.
@@ -467,6 +468,7 @@ bridge.py ─① Virtual Console HTTP (8088) ──→ 차속·기어·페달·�
 | `app/src/debug/` | 실측용 권한, DO 선언 화면(`DoProbeActivity`). release 빌드에는 들어가지 않음 |
 | `tools/carla/` | `bridge.py`(CARLA → Pleos), `run.sh`, `bev.py`(내려다본 그림), `make_demo.sh`(데모 영상 합성), `check_signals.sh` + `compare_signals.py`(1단계 검증, 테스트 `test_compare_signals.py`), `driver.py`(응시자처럼 운전하는 스크립트, `--driver`), `compose.yaml`, `Dockerfile` |
 | `assets/` | `carla-pleos-demo.mp4`/`.gif`, 스크린샷, 카메라·EVS 캡처. **git에서 제외** (큰 파일이고, 카메라 사진에 사람 얼굴이 있음) |
+| `assets/experiments/` | 실험 녹화(`make_demo.sh` 결과). 근거로 남기려고 이것만 git에 넣음: `carla-careful-drive-1029/`(운전 스크립트 주행) |
 
 git: `master` 브랜치 하나이고, 원격 저장소는 아직 없습니다.
 
@@ -477,6 +479,7 @@ tools/carla/run.sh --seconds 120      # Pleos 에뮬레이터에 연결
 cd tools/carla && ./run.sh --seconds 90 --record recording && ./make_demo.sh recording ../../assets   # 데모 영상
 tools/carla/check_signals.sh 90       # 1단계 검증: 앱이 기록한 신호 = 브리지가 보낸 값 (PASS 0, FAIL 1, 판정 불가 2)
 tools/carla/check_signals.sh 120 --driver   # 같은 검증을 운전 스크립트로. 앱 기록은 tools/carla/signals/app.csv
+cd tools/carla && ./check_signals.sh 100 --driver --record recording/careful-1029 && ./make_demo.sh recording/careful-1029 ../../assets/experiments/carla-careful-drive-1029   # 검증하며 촬영 (녹화 최대 180초)
 
 # 단위 테스트
 ./gradlew :app:testDebugUnitTest

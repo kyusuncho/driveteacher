@@ -161,13 +161,16 @@ class RoadTestTest {
     }
 
     @Test
-    fun `recorded careful drive keeps all 100 points`() {
-        // tools/carla/driver.py: starts and stops gently, waits at three red lights (14, 25 and 20 s) in N with the
-        // brake held, shifting back to D before moving off, and ends braking to a stop, then P.
-        val test = score(recording("carla-careful-drive-1028.csv"))
-        assertEquals(listOf<Enum<*>>(), penalties(test))
-        assertEquals(100, test.score)
-        assertTrue(test.passed)
+    fun `recorded careful drives keep all 100 points`() {
+        // tools/carla/driver.py: starts and stops gently, waits at lights in N with the brake held, shifting back
+        // to D before moving off, and ends braking to a stop, then P. 1028: three red lights (14, 25 and 20 s).
+        // 1029 (filmed, assets/experiments/carla-careful-drive-1029): one light (35 s).
+        for (name in listOf("carla-careful-drive-1028.csv", "carla-careful-drive-1029.csv")) {
+            val test = score(recording(name))
+            assertEquals(name, listOf<Enum<*>>(), penalties(test))
+            assertEquals(name, 100, test.score)
+            assertTrue(name, test.passed)
+        }
     }
 }
 

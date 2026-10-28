@@ -32,6 +32,7 @@ internal fun merge(vararg parts: List<Sample>): List<Sample> = parts.toList().fl
  * App recordings (SignalRecordTest) of CARLA drives; limit and belt are unreadable on the emulator.
  * - carla-drive-1028.csv: the 8th stage-1 run (10/28 18:50), CARLA autopilot, 98 s.
  * - carla-careful-drive-1028.csv: tools/carla/driver.py (10/28 23:55), 120 s simulated.
+ * - carla-careful-drive-1029.csv: the same driver (10/29 05:40), 100 s simulated, filmed with --record.
  */
 internal fun recording(name: String): List<Sample> =
     checkNotNull(object {}.javaClass.getResource("/$name")).readText().lines().mapNotNull(::parse)

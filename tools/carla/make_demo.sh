@@ -33,7 +33,8 @@ ffmpeg -y -loglevel error -t 25 -i "$VIDEO" -vf \
 moments=$(awk -F, 'NR == 2 { t0 = $2 } NR > 1 {
     t = $2 - t0; last = t
     if (!drive && $3 == "drive" && $4 > 20) drive = t + 1
-    if (!red && $3 == "drive" && $6 == "Red" && $4 < 1) red = t + 1 }
+    # driver.py stops short of the light trigger area (light "-"), but waits in N
+    if (!red && $3 == "drive" && ($6 == "Red" || $5 == "Neutral") && $4 < 1) red = t + 5 }
   END { printf "parked 2\ndriving %.1f\n", drive; if (red) printf "red-light %.1f\n", red; printf "end %.1f\n", last - 1 }' \
   "$REC/frames.csv")
 while read -r name at; do
