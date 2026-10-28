@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Stage-1 check: the app records its signal stream (SignalRecordTest) while the bridge drives CARLA, then
 # compare_signals.py checks the app saw what the bridge sent. Docker Desktop and the Pleos emulator must be running.
-#   ./check_signals.sh [drive seconds, default 60]
+#   ./check_signals.sh [drive seconds, default 60] [bridge.py options, e.g. --driver]
 # Leaves signals/bridge.csv, signals/app.csv, signals/instrument.log, signals/logcat.txt (the device log buffer
 # rotates within minutes under the SDK's debug logging). Exit code is compare_signals.py's.
 set -euo pipefail
@@ -33,7 +33,7 @@ for kind in speed gear brake turn steering belt; do
     sleep 1
   done
 done
-./run.sh --seconds "$DRIVE_S" --log signals/bridge.csv
+./run.sh --seconds "$DRIVE_S" --log signals/bridge.csv "${@:2}"
 sleep 2  # let the last updates reach the app
 app_shell touch cache/signals.stop
 wait "$recorder"

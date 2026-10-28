@@ -28,9 +28,13 @@ internal fun brake(pressed: Boolean, atMs: Long) = listOf(Sample.Brake(atMs * NS
 /** In time order; at the same time, in the order given. */
 internal fun merge(vararg parts: List<Sample>): List<Sample> = parts.toList().flatten().sortedBy { it.tNs }
 
-/** The 8th stage-1 run (10/28 18:50): CARLA autopilot, 98 s; limit and belt unreadable on the emulator. */
-internal fun recordedCarlaDrive(): List<Sample> =
-    checkNotNull(object {}.javaClass.getResource("/carla-drive-1028.csv")).readText().lines().mapNotNull(::parse)
+/**
+ * App recordings (SignalRecordTest) of CARLA drives; limit and belt are unreadable on the emulator.
+ * - carla-drive-1028.csv: the 8th stage-1 run (10/28 18:50), CARLA autopilot, 98 s.
+ * - carla-careful-drive-1028.csv: tools/carla/driver.py (10/28 23:55), 120 s simulated.
+ */
+internal fun recording(name: String): List<Sample> =
+    checkNotNull(object {}.javaClass.getResource("/$name")).readText().lines().mapNotNull(::parse)
 
 /** SignalRecordTest's CSV, the lines scoring reads. */
 private fun parse(line: String): Sample? {

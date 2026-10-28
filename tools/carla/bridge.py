@@ -9,6 +9,7 @@ No browser tab needed; close the Virtual Console page while bridging so its own 
   ./run.sh --dry-run    # CARLA only, print what would be sent
   ./run.sh              # drive the Pleos emulator (default 60 s; --seconds N)
   ./run.sh --log signals/bridge.csv   # also log every value the consoles accepted (check_signals.sh)
+  ./run.sh --driver    # driver.py's careful driver instead of the autopilot, without traffic
 """
 import argparse
 import http.client
@@ -28,6 +29,8 @@ import uuid
 
 import carla
 
+from driver import Driver
+
 TICK_SECONDS = 0.05  # synchronous mode: the bridge advances CARLA by this much per world.tick()
 SEND_EVERY_TICKS = 2  # 10 Hz to the Pleos console
 GPS_EVERY_TICKS = 20  # 1 Hz
@@ -36,6 +39,7 @@ NEARBY_METERS = 50.0
 EGO_BLUEPRINT = "vehicle.tesla.model3"
 PREROLL_S = 4.0  # with --record: start parked in P, so the video shows the app before driving
 POSTROLL_S = 8.0  # ...and end braking to a stop and back in P
+DRIVER_STOP_S = 15.0  # --driver brakes gently: from 40 km/h that takes ~8 s, then P
 # ponytail: CARLA steer is normalized [-1, 1]; assume ~1.25 turns lock-to-lock. Tune if the console looks off.
 STEERING_WHEEL_MAX_DEG = 450
 # CARLA town origin is placed here (Seoul City Hall). Equirectangular is fine at town scale (~1-2 km).
@@ -276,12 +280,12 @@ class Recorder:
         self.emulator.screenrecord_stop()
 
 
-def spawn(world: carla.World, client: carla.Client) -> list[carla.Actor]:
+def spawn(world: carla.World, client: carla.Client, traffic: int) -> list[carla.Actor]:
     blueprints = world.get_blueprint_library()
     spawn_points = world.get_map().get_spawn_points()
     random.shuffle(spawn_points)
     actors = [world.spawn_actor(blueprints.find(EGO_BLUEPRINT), spawn_points[0])]
-    for point in spawn_points[1 : TRAFFIC_COUNT + 1]:
+    for point in spawn_points[1 : traffic + 1]:
         npc = world.try_spawn_actor(random.choice(blueprints.filter("vehicle.*")), point)
         if npc:
             actors.append(npc)
@@ -313,17 +317,18 @@ def turn_mode(ego: carla.Actor) -> str:
 
 def send(
     tick: int, phase: str, world: carla.World, ego: carla.Actor,
-    console: PleosConsole, emulator: EmulatorConsole, recorder: Recorder | None,
+    console: PleosConsole, emulator: EmulatorConsole, recorder: Recorder | None, gear: str | None = None,
 ) -> None:
-    """Mirror the ego state into Pleos (10 Hz controls, 1 Hz GPS) and record a frame if asked."""
+    """Mirror the ego state into Pleos (10 Hz controls, 1 Hz GPS) and record a frame if asked. [gear]: the
+    driver's (driver.py); without one it follows the phase."""
     control = ego.get_control()
     # The traffic manager reports NaN brake while it holds a car at 0 km/h.
     throttle, brake, steer = (0.0 if math.isnan(x) else x for x in (control.throttle, control.brake, control.steer))
     v = ego.get_velocity()
-    speed_kph = 3.6 * math.sqrt(v.x**2 + v.y**2 + v.z**2)
-    if phase == "park" or (phase == "stop" and speed_kph < 1.0):
+    speed_kph = 3.6 * math.hypot(v.x, v.y)  # without v.z: a freshly spawned car drops onto the road
+    if gear is None and (phase == "park" or (phase == "stop" and speed_kph < 1.0)):
         gear = "Park"
-    else:
+    elif gear is None:
         gear = "Reverse" if control.reverse else "Drive"
     console.set_gear(gear)
     turn = turn_mode(ego)
@@ -352,31 +357,36 @@ def send(
 
 def drive(
     world: carla.World, ego: carla.Actor, tm: carla.TrafficManager, phases: list[tuple[str, float]],
-    console: PleosConsole, emulator: EmulatorConsole, recorder: Recorder | None,
+    console: PleosConsole, emulator: EmulatorConsole, recorder: Recorder | None, driver: Driver | None,
 ) -> None:
-    """park: ego held still in P | drive: ego on autopilot in traffic | stop: halt, then P."""
+    """park: ego held still in P | drive: ego on autopilot in traffic | stop: halt, then P. A [driver] does all
+    three itself."""
     tick = 0
     next_tick = time.monotonic()
     for phase, duration in phases:
-        if phase == "drive":
+        if not driver and phase == "drive":
             ego.set_autopilot(True, tm.get_port())
             tm.update_vehicle_lights(ego, True)  # the traffic manager then sets blinkers before turns
-        elif phase == "stop":
+        elif not driver and phase == "stop":
             # set_autopilot(False) doesn't reliably release the car in sync mode (CARLA 0.9.15: it keeps its
             # last throttle and ignores apply_control), so ask the traffic manager for 0 km/h instead.
             tm.vehicle_percentage_speed_difference(ego, 100.0)
         for _ in range(int(duration / TICK_SECONDS)):
-            if phase == "park":
+            gear = driver.step(phase) if driver else None
+            if phase == "park" and not driver:
                 ego.apply_control(carla.VehicleControl(throttle=0.0, brake=1.0))
             world.tick()
-            next_tick += TICK_SECONDS
-            time.sleep(max(0.0, next_tick - time.monotonic()))  # pace the simulation to wall-clock time
+            # Pace the simulation to wall-clock time. When late (load), start again from now rather than tick
+            # faster to catch up: that squeezes seconds of driving into less real time, and the app then sees
+            # speed change several times faster than the car did (a "hard start" that never happened).
+            next_tick = max(next_tick + TICK_SECONDS, time.monotonic())
+            time.sleep(max(0.0, next_tick - time.monotonic()))
             if tick % SEND_EVERY_TICKS == 0:
-                send(tick, phase, world, ego, console, emulator, recorder)
+                send(tick, phase, world, ego, console, emulator, recorder, gear)
             tick += 1
 
 
-def run(seconds: float, dry_run: bool, record_dir: str | None, log_path: str | None) -> None:
+def run(seconds: float, dry_run: bool, record_dir: str | None, log_path: str | None, careful: bool) -> None:
     client = carla.Client(os.environ.get("CARLA_HOST", "localhost"), 2000)
     client.set_timeout(120.0)
     world = client.get_world()
@@ -401,20 +411,24 @@ def run(seconds: float, dry_run: bool, record_dir: str | None, log_path: str | N
     world.apply_settings(settings)
     client.get_trafficmanager().set_synchronous_mode(True)
 
-    actors = spawn(world, client)
+    actors = spawn(world, client, 0 if careful else TRAFFIC_COUNT)
     ego = actors[0]
     tm = client.get_trafficmanager()
     tm_port = tm.get_port()
     print(f"spawned ego + {len(actors) - 1} traffic vehicles{' (dry run)' if dry_run else ''}")
-    recorder = None
-    if record_dir:
-        recorder = Recorder(world, emulator, record_dir)
+    recorder = Recorder(world, emulator, record_dir) if record_dir else None
+    driver = Driver(world, ego, TICK_SECONDS) if careful else None
+    if driver:
+        phases = [("park", PREROLL_S), ("drive", seconds), ("stop", DRIVER_STOP_S)]
+    elif recorder:
         phases = [("park", PREROLL_S), ("drive", seconds), ("stop", POSTROLL_S)]
     else:
         phases = [("drive", seconds)]
     try:
-        drive(world, ego, tm, phases, console, emulator, recorder)
+        drive(world, ego, tm, phases, console, emulator, recorder, driver)
     finally:
+        if driver:
+            print(driver.report())
         try:
             console.park()
         finally:  # CARLA must be released even if the console hangs or raises
@@ -436,9 +450,10 @@ if __name__ == "__main__":
     parser.add_argument("--dry-run", action="store_true", help="CARLA only; don't touch the Pleos emulator")
     parser.add_argument("--record", metavar="DIR", help="relative dir: CARLA bird's-eye frames + Pleos screen video")
     parser.add_argument("--log", metavar="FILE", help="relative path: CSV of every value the consoles accepted")
+    parser.add_argument("--driver", action="store_true", help="drive with driver.py's careful driver, no traffic")
     args = parser.parse_args()
     if args.record and (args.dry_run or os.path.isabs(args.record)):
         parser.error("--record needs the emulator and a path relative to tools/carla")
     if args.log and (args.dry_run or os.path.isabs(args.log)):
         parser.error("--log needs the emulator and a path relative to tools/carla (the container sees only that)")
-    run(args.seconds, args.dry_run, args.record, args.log)
+    run(args.seconds, args.dry_run, args.record, args.log, args.driver)

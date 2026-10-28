@@ -130,7 +130,7 @@ class EventDetectorTest {
 
     @Test
     fun `recorded CARLA drive`() {
-        val samples = recordedCarlaDrive()
+        val samples = recording("carla-drive-1028.csv")
         val events = detect(samples)
         val startMs = samples.first().tNs / NS_PER_MS
         // CARLA's autopilot is harsher than the real-car figures (PLAN 6절): it pulls away at up to 22 km/h/s

@@ -145,7 +145,7 @@ class RoadTestTest {
 
     @Test
     fun `recorded CARLA drive`() {
-        val samples = recordedCarlaDrive()
+        val samples = recording("carla-drive-1028.csv")
         val startMs = samples.first().tNs / NS_PER_MS
         val test = score(samples)
         // The autopilot pulls away and stops harder than the real-car figures (EventDetectorTest) and waits at a red
@@ -158,6 +158,16 @@ class RoadTestTest {
             test.penalties.map { penalty(it) to (it.tNs / NS_PER_MS - startMs) / 100 * 100 },
         )
         assertEquals(67, test.score)
+    }
+
+    @Test
+    fun `recorded careful drive keeps all 100 points`() {
+        // tools/carla/driver.py: starts and stops gently, waits at three red lights (14, 25 and 20 s) in N with the
+        // brake held, shifting back to D before moving off, and ends braking to a stop, then P.
+        val test = score(recording("carla-careful-drive-1028.csv"))
+        assertEquals(listOf<Enum<*>>(), penalties(test))
+        assertEquals(100, test.score)
+        assertTrue(test.passed)
     }
 }
 
