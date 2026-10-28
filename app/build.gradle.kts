@@ -23,5 +23,6 @@ dependencies {
     implementation("ai.pleos.playground:NaviHelper:3.0.5") // road speed limit, cameras, caution points
     implementation("ai.pleos.playground:FusedLocation:1.1.3")
     implementation("ai.pleos.playground:TextToSpeech:3.3.1") // Mode.ON_DEVICE needs no Playground credentials
+    testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test:rules:1.7.0")
 }

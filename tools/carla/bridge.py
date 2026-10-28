@@ -1,15 +1,17 @@
 """CARLA -> Pleos emulator bridge.
 
 Spawns an autopilot ego car plus traffic in CARLA and mirrors the ego state into the Pleos emulator:
-  - speed / pedals / steering / gear -> Pleos Virtual Console HTTP API (undocumented, emulator v2.1.0)
+  - speed / pedals / steering / gear / turn signal -> Pleos Virtual Console HTTP API (undocumented, emulator v2.1.0)
   - position -> emulator console `geo fix` (CARLA town coordinates placed around ORIGIN_LAT/LON)
 
 No browser tab needed; close the Virtual Console page while bridging so its own physics doesn't overwrite us.
 
   ./run.sh --dry-run    # CARLA only, print what would be sent
   ./run.sh              # drive the Pleos emulator (default 60 s; --seconds N)
+  ./run.sh --log signals/bridge.csv   # also log every value the consoles accepted (check_signals.sh)
 """
 import argparse
+import http.client
 import json
 import math
 import os
@@ -40,22 +42,59 @@ STEERING_WHEEL_MAX_DEG = 450
 ORIGIN_LAT = float(os.environ.get("ORIGIN_LAT", "37.5665"))
 ORIGIN_LON = float(os.environ.get("ORIGIN_LON", "126.9780"))
 METERS_PER_DEG_LAT = 111_320.0
+# Outcome of one console write. UNKNOWN = no answer in time: the console may still have applied it.
+SENT, DROPPED, UNKNOWN = "sent", "dropped", "unknown"
+# The console resets the turn signal to Off whenever it deactivates (no heartbeat for 3 s; gear is kept, checked
+# 10/28), so the blinker is re-sent this often even when CARLA's does not change.
+TURN_RESEND_S = 1.0
+PARK_DEADLINE_S = 6.0  # the final stop/Park/Off retries; docker stop allows 10 s before SIGKILL
+# What a console request can fail with: urllib passes http.client errors (IncompleteRead, BadStatusLine) through.
+CONSOLE_ERRORS = (OSError, http.client.HTTPException)
+
+
+class SendLog:
+    """--log FILE: each value a console accepted, as `wall_ms,kind,value[,value2]`, or may have taken (`kind?`: the
+    write timed out). wall_ms is when the write started: the value cannot be in effect before then.
+    compare_signals.py checks that the app recorded the same values."""
+
+    def __init__(self, path: str | None) -> None:
+        self.file = open(path, "w") if path else None
+        self.lock = threading.Lock()  # the heartbeat thread writes too
+
+    def write(self, started_ms: int, kind: str, *values: object, status: str = SENT) -> None:
+        if self.file and status != DROPPED:
+            kind += "?" if status == UNKNOWN else ""
+            with self.lock:
+                self.file.write(",".join([str(started_ms), kind, *map(str, values)]) + "\n")
+
+    def close(self) -> None:
+        with self.lock:  # the heartbeat thread may still write
+            if self.file:
+                self.file.close()
+                self.file = None
+
+
+def now_ms() -> int:
+    return round(time.time() * 1000)
 
 
 class PleosConsole:
-    def __init__(self, base_url: str, dry_run: bool) -> None:
+    def __init__(self, base_url: str, dry_run: bool, log: SendLog) -> None:
         self.base_url = base_url
         self.dry_run = dry_run
+        self.log = log
         self.gear = None
+        self.turn = None
+        self.turn_sent_at = 0.0
 
-    def _put(self, path: str, params: dict) -> bool:
-        """Returns False when the update was dropped (console stall); the caller retries on its next tick."""
+    def _put(self, path: str, params: dict) -> str:
+        """SENT, DROPPED (503 during a console stall) or UNKNOWN (no answer). Callers re-send on their next tick."""
         url = f"{self.base_url}{path}?{urllib.parse.urlencode(params)}"
         if self.dry_run:
-            return True
+            return SENT
         try:
             urllib.request.urlopen(urllib.request.Request(url, method="PUT"), timeout=2).read()
-            return True
+            return SENT
         except urllib.error.HTTPError as e:
             body = e.read().decode(errors="replace")
             if e.code != 503:  # 4xx = we sent a bad value; that's a bug, stop.
@@ -63,9 +102,11 @@ class PleosConsole:
             # 503 emulator_inactive: the console stalled past its 3 s heartbeat window; the heartbeat
             # thread re-activates it, and the next 10 Hz update overwrites this one.
             print(f"console PUT skipped (503 {body}): {path}")
-        except OSError as e:  # timeouts, resets, RemoteDisconnected (not wrapped in URLError by urllib)
-            print(f"console PUT skipped ({e!r}): {path}")
-        return False
+            self.maybe_reset()
+            return DROPPED
+        except CONSOLE_ERRORS as e:  # timeouts, resets, RemoteDisconnected, cut-off responses
+            print(f"console PUT unanswered ({e!r}): {path}")
+            return UNKNOWN
 
     def start_heartbeat(self) -> None:
         """The console only accepts writes while a browser page heartbeats it (POST /browser/session every 1 s,
@@ -82,8 +123,9 @@ class PleosConsole:
                         urllib.request.Request(f"{self.base_url}/browser/session?client={client_id}", method="POST"),
                         timeout=2,
                     ).read()
-                except OSError as e:
-                    print(f"console heartbeat failed: {e}")
+                except CONSOLE_ERRORS as e:
+                    print(f"console heartbeat failed: {e!r}")
+                    self.maybe_reset()
                 time.sleep(1)
 
         threading.Thread(target=beat, daemon=True).start()
@@ -96,26 +138,60 @@ class PleosConsole:
                 with urllib.request.urlopen(f"{self.base_url}/vehicle/state", timeout=2) as response:
                     if json.load(response)["controls"].get("emulator_active"):
                         return
-            except OSError:
+            except (*CONSOLE_ERRORS, ValueError):  # ValueError: a cut-off JSON body
                 pass  # the console stalls for a few seconds at times; keep polling
             time.sleep(1)
         raise SystemExit("Pleos console inactive: is the emulator running and `adb forward tcp:8088 tcp:8088` set?")
 
-    def set_gear(self, gear: str) -> None:
+    def set_gear(self, gear: str) -> bool:
         # Only remember the gear once the console took it: in Park it silently ignores speed updates.
-        if gear != self.gear and self._put("/vehicle/gear", {"gear": gear}):
-            self.gear = gear
+        # Unanswered: forget it too, so the next tick re-sends and the console can't drift from what we think.
+        if gear != self.gear:
+            started = now_ms()
+            status = self._put("/vehicle/gear", {"gear": gear})
+            self.gear = gear if status == SENT else None
+            self.log.write(started, "gear", gear, status=status)
+        return self.gear == gear
 
-    def set_controls(self, speed_kph: float, accelerator: float, brake: float, steering_deg: float) -> None:
-        self._put(
-            "/vehicle/controls",
-            {
-                "speed": round(speed_kph),  # the console rejects decimals ("invalid_speed")
-                "accelerator": round(accelerator * 100),
-                "brake": round(brake * 100),
-                "steering": round(steering_deg),
-            },
-        )
+    def set_turn(self, mode: str) -> bool:
+        if mode != self.turn or time.monotonic() - self.turn_sent_at >= TURN_RESEND_S:
+            started = now_ms()
+            self.turn_sent_at = time.monotonic()
+            status = self._put("/vehicle/turn-signal", {"mode": mode})
+            self.turn = mode if status == SENT else None
+            self.log.write(started, "turn", mode, status=status)
+        return self.turn == mode
+
+    def maybe_reset(self) -> None:
+        """Signs the console may have deactivated, which turns the blinker Off: log that possibility and re-send."""
+        self.log.write(now_ms(), "turn", "Off", status=UNKNOWN)
+        self.turn = None
+
+    def set_controls(self, speed_kph: float, accelerator: float, brake: float, steering_deg: float) -> bool:
+        params = {
+            "speed": round(speed_kph),  # the console rejects decimals ("invalid_speed")
+            "accelerator": round(accelerator * 100),
+            "brake": round(brake * 100),
+            "steering": round(steering_deg),
+        }
+        started = now_ms()
+        status = self._put("/vehicle/controls", params)
+        # In Park (or a gear we're unsure of) the console may ignore the speed, so it is only a possibility.
+        speed_status = UNKNOWN if status == SENT and self.gear in (None, "Park") else status
+        self.log.write(started, "speed", params["speed"], status=speed_status)
+        for kind in ("brake", "steering"):  # no accelerator: the app has no pedal signal to compare
+            self.log.write(started, kind, params[kind], status=status)
+        return status == SENT
+
+    def park(self) -> None:
+        """Leave the emulator stopped, in P, blinker off. One-off writes, so retry them (a 10 Hz update would
+        simply be overwritten by the next one), in this order: in Park the console ignores the speed."""
+        deadline = time.monotonic() + PARK_DEADLINE_S
+        while time.monotonic() < deadline:
+            if self.set_controls(0, 0, 0, 0) and self.set_gear("Park") and self.set_turn("Off"):
+                return
+            time.sleep(0.5)
+        print("console did not confirm the final stop / Park / turn signal Off")
 
 
 def to_lat_lon(location: carla.Location) -> tuple[float, float]:
@@ -129,8 +205,9 @@ class EmulatorConsole:
     """Android emulator console (port 5554). `adb emu geo fix` can't be used from a container: adb opens the
     console on its own localhost, so we speak the console protocol directly."""
 
-    def __init__(self, host: str, port: int, token: str, dry_run: bool) -> None:
+    def __init__(self, host: str, port: int, token: str, dry_run: bool, log: SendLog) -> None:
         self.sock = None
+        self.log = log
         if dry_run:
             return
         if not token:
@@ -153,7 +230,9 @@ class EmulatorConsole:
 
     def geo_fix(self, lat: float, lon: float) -> None:
         if self.sock:
+            started = now_ms()
             self._command(f"geo fix {lon:.6f} {lat:.6f}")
+            self.log.write(started, "loc", f"{lat:.6f}", f"{lon:.6f}")
 
     def screenrecord_start(self, host_path: str, limit_s: int) -> None:
         """Records the emulator screen on the Mac side (no encoding load inside the starved guest)."""
@@ -222,6 +301,16 @@ def nearby(world: carla.World, ego: carla.Actor) -> list[tuple[str, float]]:
     return sorted(found, key=lambda item: item[1])
 
 
+def turn_mode(ego: carla.Actor) -> str:
+    """CARLA blinker lights (set by the traffic manager, see update_vehicle_lights) -> console turn-signal mode."""
+    lights = int(ego.get_light_state())
+    left = bool(lights & int(carla.VehicleLightState.LeftBlinker))
+    right = bool(lights & int(carla.VehicleLightState.RightBlinker))
+    if left != right:
+        return "BlinkLeft" if left else "BlinkRight"
+    return "Off"  # off, or hazards (both): the app's turn signal has no hazard state
+
+
 def send(
     tick: int, phase: str, world: carla.World, ego: carla.Actor,
     console: PleosConsole, emulator: EmulatorConsole, recorder: Recorder | None,
@@ -237,6 +326,8 @@ def send(
     else:
         gear = "Reverse" if control.reverse else "Drive"
     console.set_gear(gear)
+    turn = turn_mode(ego)
+    console.set_turn(turn)
     console.set_controls(speed_kph, throttle, brake, steer * STEERING_WHEEL_MAX_DEG)
     light = str(ego.get_traffic_light_state()) if ego.is_at_traffic_light() else "-"
     close = nearby(world, ego)
@@ -246,7 +337,7 @@ def send(
         emulator.geo_fix(lat, lon)
         print(
             f"{speed_kph:5.1f} km/h  {phase:5s} {gear:7s} thr={throttle:.2f} brk={brake:.2f} "
-            f"steer={steer:+.2f} light={light}  gps=({lat:.5f},{lon:.5f})  nearby={close[:3]}"
+            f"steer={steer:+.2f} turn={turn} light={light}  gps=({lat:.5f},{lon:.5f})  nearby={close[:3]}"
         )
     if recorder:
         hud = [
@@ -269,6 +360,7 @@ def drive(
     for phase, duration in phases:
         if phase == "drive":
             ego.set_autopilot(True, tm.get_port())
+            tm.update_vehicle_lights(ego, True)  # the traffic manager then sets blinkers before turns
         elif phase == "stop":
             # set_autopilot(False) doesn't reliably release the car in sync mode (CARLA 0.9.15: it keeps its
             # last throttle and ignores apply_control), so ask the traffic manager for 0 km/h instead.
@@ -284,12 +376,13 @@ def drive(
             tick += 1
 
 
-def run(seconds: float, dry_run: bool, record_dir: str | None) -> None:
+def run(seconds: float, dry_run: bool, record_dir: str | None, log_path: str | None) -> None:
     client = carla.Client(os.environ.get("CARLA_HOST", "localhost"), 2000)
     client.set_timeout(120.0)
     world = client.get_world()
     print(f"CARLA server {client.get_server_version()}, map {world.get_map().name}")
-    console = PleosConsole(os.environ.get("PLEOS_CONSOLE", "http://localhost:8088"), dry_run)
+    log = SendLog(log_path)
+    console = PleosConsole(os.environ.get("PLEOS_CONSOLE", "http://localhost:8088"), dry_run, log)
 
     console.start_heartbeat()
     emulator = EmulatorConsole(
@@ -297,6 +390,7 @@ def run(seconds: float, dry_run: bool, record_dir: str | None) -> None:
         int(os.environ.get("EMULATOR_CONSOLE_PORT", "5554")),
         os.environ.get("EMULATOR_TOKEN", ""),
         dry_run,
+        log,
     )
 
     # Synchronous mode: CARLA only advances when we tick, in fixed steps, paced to wall-clock time below.
@@ -321,15 +415,17 @@ def run(seconds: float, dry_run: bool, record_dir: str | None) -> None:
     try:
         drive(world, ego, tm, phases, console, emulator, recorder)
     finally:
-        console.set_controls(0, 0, 0, 0)
-        console.set_gear("Park")
-        if recorder:
-            recorder.close()
-        # Detach from the traffic manager first, or it crashes looking up destroyed actors.
-        client.apply_batch([carla.command.SetAutopilot(a, False, tm_port) for a in actors])
-        client.apply_batch_sync([carla.command.DestroyActor(a) for a in actors])
-        client.get_trafficmanager().set_synchronous_mode(False)
-        world.apply_settings(original_settings)  # don't leave the server frozen waiting for ticks
+        try:
+            console.park()
+        finally:  # CARLA must be released even if the console hangs or raises
+            log.close()
+            if recorder:
+                recorder.close()
+            # Detach from the traffic manager first, or it crashes looking up destroyed actors.
+            client.apply_batch([carla.command.SetAutopilot(a, False, tm_port) for a in actors])
+            client.apply_batch_sync([carla.command.DestroyActor(a) for a in actors])
+            client.get_trafficmanager().set_synchronous_mode(False)
+            world.apply_settings(original_settings)  # don't leave the server frozen waiting for ticks
 
 
 if __name__ == "__main__":
@@ -339,7 +435,10 @@ if __name__ == "__main__":
     parser.add_argument("--seconds", type=float, default=60.0)
     parser.add_argument("--dry-run", action="store_true", help="CARLA only; don't touch the Pleos emulator")
     parser.add_argument("--record", metavar="DIR", help="relative dir: CARLA bird's-eye frames + Pleos screen video")
+    parser.add_argument("--log", metavar="FILE", help="relative path: CSV of every value the consoles accepted")
     args = parser.parse_args()
     if args.record and (args.dry_run or os.path.isabs(args.record)):
         parser.error("--record needs the emulator and a path relative to tools/carla")
-    run(args.seconds, args.dry_run, args.record)
+    if args.log and (args.dry_run or os.path.isabs(args.log)):
+        parser.error("--log needs the emulator and a path relative to tools/carla (the container sees only that)")
+    run(args.seconds, args.dry_run, args.record, args.log)

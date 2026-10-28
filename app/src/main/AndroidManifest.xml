@@ -5,6 +5,17 @@
 
     <uses-permission android:name="pleos.car.permission.CAR_DOORS" />
 
+    <!-- signal/SignalCollector. Vehicle SDK domains are normal permissions; on a real car only within the scope
+         agreed with the Pleos App Market. -->
+    <uses-permission android:name="pleos.car.permission.CAR_DRIVE" /> <!-- brake, steering -->
+    <uses-permission android:name="pleos.car.permission.CAR_LIGHTS" /> <!-- turn signal -->
+    <uses-permission android:name="pleos.car.permission.CAR_SEATS" /> <!-- seat belt -->
+    <uses-permission android:name="android.car.permission.CAR_SPEED" /> <!-- dangerous: runtime grant -->
+    <uses-permission android:name="android.car.permission.CAR_POWERTRAIN" /> <!-- gear -->
+    <!-- Road speed limit. Which NAVI_* permission gates it is not documented; NAVI_ROUTE is the read-only one. -->
+    <uses-permission android:name="pleos.car.permission.NAVI_ROUTE" />
+    <uses-permission android:name="pleos.car.permission.FUSED_LOCATION" /> <!-- dangerous: runtime grant -->
+
     <application android:label="Pleos Test">
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>

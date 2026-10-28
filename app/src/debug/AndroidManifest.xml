@@ -7,28 +7,20 @@
     <!-- probe/ConsoleClient drives the Virtual Console at http://127.0.0.1:8088 on the device. -->
     <uses-permission android:name="android.permission.INTERNET" />
 
-    <!-- Vehicle SDK domains (normal, install-time). -->
-    <uses-permission android:name="pleos.car.permission.CAR_DRIVE" />
-    <uses-permission android:name="pleos.car.permission.CAR_LIGHTS" />
-    <uses-permission android:name="pleos.car.permission.CAR_SEATS" />
+    <!-- Vehicle SDK domains (normal, install-time); CAR_DRIVE/LIGHTS/SEATS and CAR_SPEED/POWERTRAIN are in main. -->
     <uses-permission android:name="pleos.car.permission.CAR_SAFETY" />
     <uses-permission android:name="pleos.car.permission.PRIVATE_CAR_SAFETY" />
     <uses-permission android:name="pleos.car.permission.CAR_WINDOWS" />
 
-    <!-- AAOS properties: CAR_SPEED is dangerous (runtime grant), CAR_POWERTRAIN normal. -->
-    <uses-permission android:name="android.car.permission.CAR_SPEED" />
-    <uses-permission android:name="android.car.permission.CAR_POWERTRAIN" />
-    <!-- signature|privileged on the device: declared only to show a third-party app still cannot read these. -->
+    <!-- AAOS, signature|privileged on the device: declared only to show a third-party app still cannot read these. -->
     <uses-permission android:name="android.car.permission.READ_CAR_STEERING" />
     <uses-permission android:name="android.car.permission.CAR_EXTERIOR_LIGHTS" />
     <uses-permission android:name="android.car.permission.CONTROL_CAR_SEATS" />
     <uses-permission android:name="android.car.permission.CAR_MILEAGE" />
     <uses-permission android:name="android.car.permission.CAR_VENDOR_EXTENSION" />
 
-    <!-- probe/NaviLocationProbeTest: NaviHelper (normal), FusedLocation (dangerous), android.location, Pleos TTS (normal). -->
-    <uses-permission android:name="pleos.car.permission.NAVI_ROUTE" />
+    <!-- probe/NaviLocationProbeTest: route requests, android.location, Pleos TTS (normal). NAVI_ROUTE and FUSED_LOCATION are in main. -->
     <uses-permission android:name="pleos.car.permission.NAVI_ROUTE_SEARCH" />
-    <uses-permission android:name="pleos.car.permission.FUSED_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="pleos.car.permission.TTS_SERVICE" />
