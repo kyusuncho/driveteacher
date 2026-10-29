@@ -2,6 +2,7 @@ package com.kyusun.pleos.scoring
 
 import com.kyusun.pleos.signal.GearPosition
 import com.kyusun.pleos.signal.Sample
+import com.kyusun.pleos.signal.parseSample
 
 /** Building blocks for test drives. Times are ms from 0; [merge] puts the pieces in time order. */
 internal const val NS_PER_MS = 1_000_000L
@@ -35,19 +36,4 @@ internal fun merge(vararg parts: List<Sample>): List<Sample> = parts.toList().fl
  * - carla-careful-drive-1029.csv: the same driver (10/29 05:40), 100 s simulated, filmed with --record.
  */
 internal fun recording(name: String): List<Sample> =
-    checkNotNull(object {}.javaClass.getResource("/$name")).readText().lines().mapNotNull(::parse)
-
-/** SignalRecordTest's CSV, the lines scoring reads. */
-private fun parse(line: String): Sample? {
-    val f = line.split(",")
-    if (f.size < 3 || line.startsWith("#")) return null
-    val t = f[0].toLong() * NS_PER_MS
-    return when (f[1]) {
-        "speed" -> Sample.Speed(t, f[2].toFloat(), t + (f.getOrNull(3)?.toLong() ?: 0) * NS_PER_MS)
-        "gear" -> Sample.Gear(t, GearPosition.valueOf(f[2]))
-        "brake" -> Sample.Brake(t, f[2].toBoolean())
-        "limit" -> Sample.SpeedLimit(t, f[2].toInt())
-        "belt" -> Sample.SeatBelt(t, f[2].toBoolean())
-        else -> null
-    }
-}
+    checkNotNull(object {}.javaClass.getResource("/$name")).readText().lines().mapNotNull(::parseSample)

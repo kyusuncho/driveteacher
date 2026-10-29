@@ -3,6 +3,7 @@ package com.kyusun.pleos.signal
 import ai.pleos.playground.location.fused.FusedLocation
 import ai.pleos.playground.location.fused.listener.FusedLocationListener
 import ai.pleos.playground.location.fused.model.LocationData
+import ai.pleos.playground.navi.data.CameraAlert
 import ai.pleos.playground.navi.helper.NaviHelper
 import ai.pleos.playground.navi.helper.listener.NaviHelperEventListener
 import ai.pleos.playground.vehicle.Vehicle
@@ -27,7 +28,9 @@ import android.util.Log
 /**
  * Collects the car signals the app scores on into one [Sample] stream:
  * AAOS speed (10 Hz) and gear, Vehicle SDK brake / turn signal / steering / driver seat belt,
- * NaviHelper road speed limit and Pleos FusedLocation.
+ * NaviHelper road speed limit and enforcement cameras, and Pleos FusedLocation.
+ * Debug builds also listen to the simulator channel (③, [openSimChannel]): what it sends replaces the car's signal
+ * of the same kind ([Overrides]), for what the emulator cannot fake (seat belt, speed limit, cameras).
  *
  * [sink] runs on one background thread, one sample at a time, in arrival order (see [Sample.tNs] for the times).
  * Call [start] once, then [close]; once [close] returns, [sink] is not called again. Do not call [close] from [sink].
@@ -40,6 +43,7 @@ class SignalCollector(private val context: Context, private val sink: (Sample) -
     // Only touched on [thread].
     private val cleanups = mutableListOf<() -> Unit>()
     private var closed = false
+    private val overrides = Overrides()
 
     fun start() {
         handler.post {
@@ -47,6 +51,7 @@ class SignalCollector(private val context: Context, private val sink: (Sample) -
             startSource("car properties", ::startCarProperties)
             startSource("navi", ::startNavi)
             startSource("location", ::startLocation)
+            startSource("simulator", ::startSim)
         }
     }
 
@@ -60,9 +65,24 @@ class SignalCollector(private val context: Context, private val sink: (Sample) -
         thread.join()
     }
 
-    /** Delivers on [thread] in arrival order. [make] runs there and may drop the sample by returning null. */
+    /**
+     * A car signal: delivers on [thread] in arrival order unless the simulator has taken over its kind. [make] runs
+     * there and may drop the sample by returning null.
+     */
     private fun emit(make: () -> Sample?) {
-        handler.post { if (!closed) make()?.let(sink) }
+        handler.post { if (!closed) make()?.let(overrides::fromCar)?.let(sink) }
+    }
+
+    private fun startSim() {
+        val channel = openSimChannel { line ->
+            val t = now()
+            handler.post {
+                if (closed) return@post
+                val sample = simSample(line, t)
+                if (sample == null) Log.w(TAG, "simulator: unreadable line '$line'") else sink(overrides.fromSim(sample))
+            }
+        } ?: return
+        cleanups += { channel.close() }
     }
 
     private fun startSource(name: String, start: () -> Unit) {
@@ -195,6 +215,11 @@ class SignalCollector(private val context: Context, private val sink: (Sample) -
                 val t = now()
                 emit { Sample.SpeedLimit(t, speedLimit) }
             }
+
+            override fun onCameraAlert(cameraAlerts: List<CameraAlert>) {
+                val t = now()
+                emit { Sample.SpeedCameras(t, cameraAlerts.mapNotNull(::speedCameraOf)) }
+            }
         }
         cleanups += { navi.release() }
         navi.initialize(
@@ -269,6 +294,27 @@ class SignalCollector(private val context: Context, private val sink: (Sample) -
 
         fun now() = SystemClock.elapsedRealtimeNanos()
     }
+}
+
+/**
+ * Simulator values (③) replace the car's of the same kind, from the simulator's first value of that kind on: the
+ * car's value counts until then (a debug build in a real car, with no simulator, keeps every car signal).
+ * It lasts as long as the collector (one simulated drive): if the bridge stops first, the last simulator values stay.
+ * Not thread-safe: SignalCollector uses it on its one thread.
+ */
+internal class Overrides {
+    private val kinds = mutableSetOf<Class<out Sample>>()
+
+    fun fromSim(sample: Sample): Sample = sample.also { kinds += it.javaClass }
+
+    fun fromCar(sample: Sample): Sample? = sample.takeUnless { it.javaClass in kinds }
+}
+
+/** A type this SDK version does not know is dropped; separators in the id would break the recording line. */
+private fun speedCameraOf(alert: CameraAlert): SpeedCamera? {
+    val type = SpeedCameraType.entries.find { it.name == alert.type.name } ?: return null
+    val id = alert.id.replace(Regex("[,/;]"), "-")
+    return SpeedCamera(id, type, alert.speedLimit, alert.remainDistance, alert.isOverSpeed)
 }
 
 /** EVs have P/R/N/D only; manual gears (GEAR_1..) are not expected. */

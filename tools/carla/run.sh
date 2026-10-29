@@ -5,6 +5,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 adb forward tcp:8088 tcp:8088 >/dev/null
+adb reverse tcp:7777 tcp:7777 >/dev/null  # the app's debug build reaches the bridge's simulator channel (③)
 EMULATOR_TOKEN="$(cat ~/.emulator_console_auth_token)"
 export EMULATOR_TOKEN
 
@@ -15,4 +16,4 @@ until docker compose run --rm -T client python -c \
   sleep 5
 done
 
-exec docker compose run --rm -T client python bridge.py "$@"
+exec docker compose run --rm -T -p 127.0.0.1:7777:7777 client python bridge.py "$@"

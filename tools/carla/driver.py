@@ -8,6 +8,7 @@ junctions. It does not look for other cars, so the bridge spawns none with it.
 """
 import math
 from collections import deque
+from typing import Callable, Optional
 
 import carla
 
@@ -39,14 +40,23 @@ def yaw_diff(a: float, b: float) -> float:
     return (b - a + 180.0) % 360.0 - 180.0
 
 
+def straightest(options: list[carla.Waypoint], heading: float) -> carla.Waypoint:
+    """The way on that turns least: the driver's choice at every junction."""
+    return min(options, key=lambda w: abs(yaw_diff(heading, w.transform.rotation.yaw)))
+
+
 def speed(actor: carla.Actor) -> float:
     v = actor.get_velocity()
     return math.hypot(v.x, v.y)  # as bridge.py sends it
 
 
 class Driver:
-    def __init__(self, world: carla.World, ego: carla.Actor, dt: float) -> None:
+    def __init__(
+        self, world: carla.World, ego: carla.Actor, dt: float, speed_limit: Optional[Callable[[], float]] = None,
+    ) -> None:
+        """[speed_limit]: the road's, km/h; CARLA's own by default (it reads speed signs, which only its towns have)."""
         self.ego, self.dt = ego, dt
+        self.speed_limit = speed_limit or ego.get_speed_limit
         self.map = world.get_map()
         self.stops = [
             (light, [(w.transform.location.x, w.transform.location.y) for w in light.get_stop_waypoints()])
@@ -56,6 +66,7 @@ class Driver:
         self.max_steer_deg = wheels[0].max_steer_angle
         self.wheelbase = wheels[0].position.distance(wheels[2].position) / 100.0  # cm -> m
         self.plan = [self.map.get_waypoint(ego.get_location())]
+        self.dead_end = False
         self.v_ref = 0.0
         self.integral = 0.0
         self.gear = "Park"
@@ -127,13 +138,14 @@ class Driver:
             if d.x * forward.x + d.y * forward.y > 0:
                 break
             self.plan.pop(0)
+        self.dead_end = False
         while len(self.plan) * STEP_M < PLAN_M:
             last = self.plan[-1]
             options = last.next(STEP_M)
-            if not options:
+            if not options:  # the map's edge, or a lane a converted (OSM) map leaves unconnected at a junction
+                self.dead_end = True
                 break
-            heading = last.transform.rotation.yaw
-            self.plan.append(min(options, key=lambda w: abs(yaw_diff(heading, w.transform.rotation.yaw))))
+            self.plan.append(straightest(options, last.transform.rotation.yaw))
 
     def _ahead(self) -> list[tuple[float, carla.Waypoint]]:
         """Plan waypoints with their distance along the road from the car."""
@@ -148,7 +160,7 @@ class Driver:
         """Fastest speed from which every limit ahead (curves, stop lines) can be met braking at DECEL, and whether
         a light says stop."""
         ahead = self._ahead()
-        caps = [(0.0, min(CRUISE_KPH, self.ego.get_speed_limit()) / 3.6)]
+        caps = [(0.0, min(CRUISE_KPH, self.speed_limit()) / 3.6)]
         for (s, a), (_, b) in zip(ahead, ahead[1:]):
             turn = abs(math.radians(yaw_diff(a.transform.rotation.yaw, b.transform.rotation.yaw)))
             if turn > 1e-3:
@@ -156,6 +168,8 @@ class Driver:
         line = self._stop_line(ahead, v)
         if line is not None:
             caps.append((line - STOP_MARGIN_M, 0.0))
+        if self.dead_end:  # stop before the lane runs out: past it there is no road under the car
+            caps.append((ahead[-1][0] - STOP_MARGIN_M, 0.0))
         return min(math.sqrt(cap**2 + 2 * DECEL * max(0.0, s)) for s, cap in caps), line is not None
 
     def _stop_line(self, ahead: list[tuple[float, carla.Waypoint]], v: float) -> float | None:

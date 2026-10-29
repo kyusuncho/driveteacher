@@ -4,7 +4,8 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
-    <!-- probe/ConsoleClient drives the Virtual Console at http://127.0.0.1:8088 on the device. -->
+    <!-- probe/ConsoleClient drives the Virtual Console at http://127.0.0.1:8088 on the device; signal/SimChannel
+         reads the CARLA bridge's simulator channel (③) on 127.0.0.1:7777. -->
     <uses-permission android:name="android.permission.INTERNET" />
 
     <!-- Vehicle SDK domains (normal, install-time); CAR_DRIVE/LIGHTS/SEATS and CAR_SPEED/POWERTRAIN are in main. -->

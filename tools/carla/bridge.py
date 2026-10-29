@@ -2,7 +2,9 @@
 
 Spawns an autopilot ego car plus traffic in CARLA and mirrors the ego state into the Pleos emulator:
   - speed / pedals / steering / gear / turn signal -> Pleos Virtual Console HTTP API (undocumented, emulator v2.1.0)
-  - position -> emulator console `geo fix` (CARLA town coordinates placed around ORIGIN_LAT/LON)
+  - position -> emulator console `geo fix` (CARLA town coordinates placed around ORIGIN_LAT/LON; real ones with --map)
+  - seat belt, road speed limit and, with --map, enforcement cameras ahead -> the simulator channel (③) to the app's
+    debug build, which takes them in place of the car's (the emulator cannot fake these; PLAN 4절)
 
 No browser tab needed; close the Virtual Console page while bridging so its own physics doesn't overwrite us.
 
@@ -10,6 +12,7 @@ No browser tab needed; close the Virtual Console page while bridging so its own 
   ./run.sh              # drive the Pleos emulator (default 60 s; --seconds N)
   ./run.sh --log signals/bridge.csv   # also log every value the consoles accepted (check_signals.sh)
   ./run.sh --driver    # driver.py's careful driver instead of the autopilot, without traffic
+  ./run.sh --driver --map gangnam   # on 강남역~역삼역 from OpenStreetMap, with its speed cameras (traffic_info.py)
 """
 import argparse
 import http.client
@@ -29,7 +32,9 @@ import uuid
 
 import carla
 
-from driver import Driver
+from driver import Driver, straightest
+from traffic_info import (ROAD_TYPES, Camera, angle_diff, camera_alerts, fill_speed_limits, load_cameras, osm_bounds,
+                          road_limits)
 
 TICK_SECONDS = 0.05  # synchronous mode: the bridge advances CARLA by this much per world.tick()
 SEND_EVERY_TICKS = 2  # 10 Hz to the Pleos console
@@ -54,6 +59,16 @@ TURN_RESEND_S = 1.0
 PARK_DEADLINE_S = 6.0  # the final stop/Park/Off retries; docker stop allows 10 s before SIGKILL
 # What a console request can fail with: urllib passes http.client errors (IncompleteRead, BadStatusLine) through.
 CONSOLE_ERRORS = (OSError, http.client.HTTPException)
+SIM_PORT = 7777  # the app's SimChannel.kt; run.sh publishes it and sets `adb reverse`
+SIM_SEND_TIMEOUT_S = 1.0  # an app that stops reading must not stall the tick loop
+DEFAULT_TOWN = "Town10HD_Opt"  # the server's map at start; reloaded after a --map run left an OSM map loaded
+# --map NAME: maps/NAME.osm (+ NAME-cameras.csv), and where the ego starts so a run passes cameras:
+# road, lat, lon, compass heading. gangnam: 테헤란로 at 강남역, heading for the 역삼역 cameras about 800 m on.
+MAP_STARTS = {"gangnam": ("테헤란로", 37.4981, 127.0280, 70.0)}
+START_HEADING_DEG = 30.0
+# Some lanes of a converted map end at a junction (the converter drops their connection): the start's lane must lead
+# on this far driving straight on, past the cameras the run is for.
+START_ROUTE_M = 900.0
 
 
 class SendLog:
@@ -66,9 +81,11 @@ class SendLog:
         self.lock = threading.Lock()  # the heartbeat thread writes too
 
     def write(self, started_ms: int, kind: str, *values: object, status: str = SENT) -> None:
-        if self.file and status != DROPPED:
-            kind += "?" if status == UNKNOWN else ""
-            with self.lock:
+        if status == DROPPED:
+            return
+        kind += "?" if status == UNKNOWN else ""
+        with self.lock:  # close() may run meanwhile (the simulator channel's accept thread writes too)
+            if self.file:
                 self.file.write(",".join([str(started_ms), kind, *map(str, values)]) + "\n")
 
     def close(self) -> None:
@@ -205,6 +222,135 @@ def to_lat_lon(location: carla.Location) -> tuple[float, float]:
     return lat, lon
 
 
+def compass(yaw: float) -> float:
+    """CARLA yaw (0 = +x = east, growing clockwise seen from above) -> compass heading (0 north, 90 east)."""
+    return (yaw + 90.0) % 360.0
+
+
+class SimChannel:
+    """③ simulator channel: what the emulator cannot fake, as the app's recording lines without the time
+    (`limit,50`; Sample.kt). The app's debug build connects through `adb reverse tcp:7777` (run.sh) and takes these
+    in place of the car's own values. A (re)connecting app first gets the latest value of every kind. Each line that
+    reached the socket is logged like a console write (compare_signals.py checks the app recorded it)."""
+
+    def __init__(self, port: int, dry_run: bool, log: SendLog) -> None:
+        self.log = log
+        self.latest: dict[str, tuple] = {}
+        self.client: socket.socket | None = None
+        self.lock = threading.Lock()  # the accept thread sends too
+        if not dry_run:
+            server = socket.create_server(("0.0.0.0", port))  # in the container; run.sh publishes it on localhost only
+            threading.Thread(target=self._accept, args=(server,), daemon=True).start()
+            log.write(now_ms(), "sim", port)  # compare_signals.py: the app was expected to connect
+
+    def _accept(self, server: socket.socket) -> None:
+        while True:
+            conn, _ = server.accept()
+            conn.settimeout(SIM_SEND_TIMEOUT_S)
+            with self.lock:
+                if self.client:
+                    self.client.close()
+                self.client = conn
+                print("simulator channel: app connected")
+                for kind, values in self.latest.items():
+                    self._send(kind, values)
+
+    def send(self, kind: str, *values: object) -> None:
+        with self.lock:
+            self.latest[kind] = values
+            self._send(kind, values)
+
+    def _send(self, kind: str, values: tuple) -> None:
+        if self.client is None:
+            return
+        started = now_ms()
+        try:
+            self.client.sendall((",".join([kind, *map(str, values)]) + "\n").encode())
+        except OSError as e:  # the app went away (or stopped reading): it reconnects and gets the latest again
+            print(f"simulator channel: app gone ({e!r})")
+            self.client.close()
+            self.client = None
+            return
+        self.log.write(started, kind, *values)
+
+
+class Navigation:
+    """What the car's navigation would tell the app (NaviHelper): position, the road's speed limit and, on a --map
+    map, the enforcement cameras ahead. CARLA's towns have speed signs, which CARLA reads itself; a map converted
+    from OpenStreetMap has none (CARLA says 30 everywhere), so there the limit comes from the OSM tags."""
+
+    def __init__(self, world_map: carla.Map, roads: dict[int, tuple[str, int]], cameras: list[Camera]) -> None:
+        self.map, self.roads, self.cameras = world_map, roads, cameras
+        self.road, self.limit = "", 0  # kept through junctions, which have no name or limit of their own
+        self.alerts = ""
+
+    def locate(self, location: carla.Location) -> tuple[float, float]:
+        if not self.roads:  # a town: no real place, so put it in Seoul
+            return to_lat_lon(location)
+        geo = self.map.transform_to_geolocation(location)  # the map's georeference: real coordinates
+        return geo.latitude, geo.longitude
+
+    def limit_kph(self, ego: carla.Actor) -> float:
+        if not self.roads:
+            return ego.get_speed_limit()
+        road = self.roads.get(self.map.get_waypoint(ego.get_location()).road_id)
+        if road:
+            self.road, self.limit = road
+        return self.limit or ego.get_speed_limit()
+
+    def camera_alerts(self, ego: carla.Actor, lat: float, lon: float, speed_kph: float) -> str:
+        """The app's `cameras` value: the cameras ahead on the current road (call limit_kph first)."""
+        heading = compass(ego.get_transform().rotation.yaw)
+        self.alerts = ";".join(camera_alerts(self.cameras, lat, lon, heading, self.road, speed_kph))
+        return self.alerts
+
+    def start(self, road: str, lat: float, lon: float, heading: float) -> carla.Transform:
+        """The spawn point on [road] heading about [heading] nearest to (lat, lon)."""
+        def fits(t: carla.Transform) -> bool:
+            wp = self.map.get_waypoint(t.location)
+            on = self.roads.get(wp.road_id)
+            return (on is not None and on[0] == road and abs(angle_diff(heading, compass(t.rotation.yaw))) < START_HEADING_DEG
+                    and leads_on(wp, START_ROUTE_M))
+
+        points = [t for t in self.map.get_spawn_points() if fits(t)]
+        if not points:
+            raise SystemExit(f"no spawn point on {road} heading {heading} whose lane leads on {START_ROUTE_M} m")
+        return min(points, key=lambda t: math.dist(self.locate(t.location), (lat, lon)))
+
+
+def leads_on(wp: carla.Waypoint, meters: float, step: float = 2.0) -> bool:
+    """Whether driving straight on (as driver.py does) from [wp] goes [meters] without the lane running out."""
+    for _ in range(int(meters / step)):
+        options = wp.next(step)
+        if not options:
+            return False
+        wp = straightest(options, wp.transform.rotation.yaw)
+    return True
+
+
+def load_osm_world(client: carla.Client, name: str) -> tuple[carla.World, Navigation]:
+    """maps/NAME.osm -> OpenDRIVE (CARLA's converter) -> a generated world, with its roads' limits and cameras.
+    The projection is centred on the map so coordinates stay small for Unreal and the OpenDRIVE file keeps a
+    georeference CARLA can read (with the default settings it writes none and puts the map at 42N 2E)."""
+    with open(f"maps/{name}.osm", encoding="utf-8") as f:
+        osm = fill_speed_limits(f.read())
+    min_lat, min_lon, max_lat, max_lon = osm_bounds(osm)
+    settings = carla.Osm2OdrSettings()
+    settings.set_osm_way_types(ROAD_TYPES)
+    settings.generate_traffic_lights = True
+    settings.center_map = False
+    settings.use_offsets = False
+    settings.proj_string = (f"+proj=tmerc +lat_0={(min_lat + max_lat) / 2:.6f} +lon_0={(min_lon + max_lon) / 2:.6f} "
+                            "+k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m +no_defs")
+    xodr = carla.Osm2Odr.convert(osm, settings)
+    world = client.generate_opendrive_world(xodr, carla.OpendriveGenerationParameters(
+        vertex_distance=2.0, max_road_length=500.0, wall_height=0.0, additional_width=0.6, smooth_junctions=True,
+        enable_mesh_visibility=True))
+    roads, cameras = road_limits(xodr), load_cameras(f"maps/{name}-cameras.csv")
+    print(f"map {name}: {len(roads)} roads, {len(cameras)} speed cameras")
+    return world, Navigation(world.get_map(), roads, cameras)
+
+
 class EmulatorConsole:
     """Android emulator console (port 5554). `adb emu geo fix` can't be used from a container: adb opens the
     console on its own localhost, so we speak the console protocol directly."""
@@ -280,11 +426,12 @@ class Recorder:
         self.emulator.screenrecord_stop()
 
 
-def spawn(world: carla.World, client: carla.Client, traffic: int) -> list[carla.Actor]:
+def spawn(world: carla.World, client: carla.Client, traffic: int, start: carla.Transform | None) -> list[carla.Actor]:
+    """The ego at [start], or at a random spawn point, then [traffic] cars at others."""
     blueprints = world.get_blueprint_library()
     spawn_points = world.get_map().get_spawn_points()
     random.shuffle(spawn_points)
-    actors = [world.spawn_actor(blueprints.find(EGO_BLUEPRINT), spawn_points[0])]
+    actors = [world.spawn_actor(blueprints.find(EGO_BLUEPRINT), start or spawn_points[0])]
     for point in spawn_points[1 : traffic + 1]:
         npc = world.try_spawn_actor(random.choice(blueprints.filter("vehicle.*")), point)
         if npc:
@@ -316,11 +463,11 @@ def turn_mode(ego: carla.Actor) -> str:
 
 
 def send(
-    tick: int, phase: str, world: carla.World, ego: carla.Actor,
-    console: PleosConsole, emulator: EmulatorConsole, recorder: Recorder | None, gear: str | None = None,
+    tick: int, phase: str, world: carla.World, ego: carla.Actor, console: PleosConsole, emulator: EmulatorConsole,
+    sim: SimChannel, nav: Navigation, recorder: Recorder | None, gear: str | None = None,
 ) -> None:
-    """Mirror the ego state into Pleos (10 Hz controls, 1 Hz GPS) and record a frame if asked. [gear]: the
-    driver's (driver.py); without one it follows the phase."""
+    """Mirror the ego state into Pleos (10 Hz controls; 1 Hz GPS, and speed limit and cameras like NaviHelper) and
+    record a frame if asked. [gear]: the driver's (driver.py); without one it follows the phase."""
     control = ego.get_control()
     # The traffic manager reports NaN brake while it holds a car at 0 km/h.
     throttle, brake, steer = (0.0 if math.isnan(x) else x for x in (control.throttle, control.brake, control.steer))
@@ -338,13 +485,19 @@ def send(
     close = nearby(world, ego)
 
     if tick % GPS_EVERY_TICKS == 0:
-        lat, lon = to_lat_lon(ego.get_location())
+        lat, lon = nav.locate(ego.get_location())
         emulator.geo_fix(lat, lon)
+        limit = round(nav.limit_kph(ego))
+        sim.send("limit", limit)
+        if nav.cameras:
+            sim.send("cameras", nav.camera_alerts(ego, lat, lon, speed_kph))
         print(
             f"{speed_kph:5.1f} km/h  {phase:5s} {gear:7s} thr={throttle:.2f} brk={brake:.2f} "
-            f"steer={steer:+.2f} turn={turn} light={light}  gps=({lat:.5f},{lon:.5f})  nearby={close[:3]}"
+            f"steer={steer:+.2f} turn={turn} light={light}  gps=({lat:.5f},{lon:.5f}) limit={limit} "
+            f"{nav.road} cameras=[{nav.alerts}]  nearby={close[:3]}"
         )
     if recorder:
+        camera = nav.alerts.split(";")[0].split("/") if nav.alerts else None
         hud = [
             f"CARLA  t={tick * TICK_SECONDS:5.1f}s   phase: {phase}",
             f"ego {speed_kph:3.0f} km/h    -> Pleos gear {gear[0]}",
@@ -352,12 +505,16 @@ def send(
             f"steer {steer:+.2f}    light: {light}",
             f"nearest vehicle: {close[0][1]:.0f} m" if close else "nearest vehicle: -",
         ]
+        if nav.cameras:
+            hud.append(f"limit {nav.limit} km/h   camera {camera[3]} m ({camera[2]})" if camera else
+                       f"limit {nav.limit} km/h   camera -")
         recorder.frame(ego, hud, phase, speed_kph, gear, light)
 
 
 def drive(
     world: carla.World, ego: carla.Actor, tm: carla.TrafficManager, phases: list[tuple[str, float]],
-    console: PleosConsole, emulator: EmulatorConsole, recorder: Recorder | None, driver: Driver | None,
+    console: PleosConsole, emulator: EmulatorConsole, sim: SimChannel, nav: Navigation, recorder: Recorder | None,
+    driver: Driver | None,
 ) -> None:
     """park: ego held still in P | drive: ego on autopilot in traffic | stop: halt, then P. A [driver] does all
     three itself."""
@@ -382,17 +539,31 @@ def drive(
             next_tick = max(next_tick + TICK_SECONDS, time.monotonic())
             time.sleep(max(0.0, next_tick - time.monotonic()))
             if tick % SEND_EVERY_TICKS == 0:
-                send(tick, phase, world, ego, console, emulator, recorder, gear)
+                send(tick, phase, world, ego, console, emulator, sim, nav, recorder, gear)
             tick += 1
 
 
-def run(seconds: float, dry_run: bool, record_dir: str | None, log_path: str | None, careful: bool) -> None:
+def load_world(client: carla.Client, map_name: str | None) -> tuple[carla.World, Navigation]:
+    if map_name:
+        return load_osm_world(client, map_name)
+    world = client.get_world()
+    if world.get_map().name.endswith("OpenDriveMap"):  # a --map run left its generated map loaded
+        print(f"reloading {DEFAULT_TOWN}")
+        world = client.load_world(DEFAULT_TOWN)
+    return world, Navigation(world.get_map(), {}, [])
+
+
+def run(
+    seconds: float, dry_run: bool, record_dir: str | None, log_path: str | None, careful: bool, map_name: str | None,
+) -> None:
     client = carla.Client(os.environ.get("CARLA_HOST", "localhost"), 2000)
     client.set_timeout(120.0)
-    world = client.get_world()
+    world, nav = load_world(client, map_name)
     print(f"CARLA server {client.get_server_version()}, map {world.get_map().name}")
     log = SendLog(log_path)
     console = PleosConsole(os.environ.get("PLEOS_CONSOLE", "http://localhost:8088"), dry_run, log)
+    sim = SimChannel(SIM_PORT, dry_run, log)
+    sim.send("belt", "true")  # the examinee buckles up; the emulator always reads unbuckled
 
     console.start_heartbeat()
     emulator = EmulatorConsole(
@@ -411,13 +582,14 @@ def run(seconds: float, dry_run: bool, record_dir: str | None, log_path: str | N
     world.apply_settings(settings)
     client.get_trafficmanager().set_synchronous_mode(True)
 
-    actors = spawn(world, client, 0 if careful else TRAFFIC_COUNT)
+    start = nav.start(*MAP_STARTS[map_name]) if map_name in MAP_STARTS else None
+    actors = spawn(world, client, 0 if careful else TRAFFIC_COUNT, start)
     ego = actors[0]
     tm = client.get_trafficmanager()
     tm_port = tm.get_port()
     print(f"spawned ego + {len(actors) - 1} traffic vehicles{' (dry run)' if dry_run else ''}")
     recorder = Recorder(world, emulator, record_dir) if record_dir else None
-    driver = Driver(world, ego, TICK_SECONDS) if careful else None
+    driver = Driver(world, ego, TICK_SECONDS, lambda: nav.limit_kph(ego)) if careful else None
     if driver:
         phases = [("park", PREROLL_S), ("drive", seconds), ("stop", DRIVER_STOP_S)]
     elif recorder:
@@ -425,7 +597,7 @@ def run(seconds: float, dry_run: bool, record_dir: str | None, log_path: str | N
     else:
         phases = [("drive", seconds)]
     try:
-        drive(world, ego, tm, phases, console, emulator, recorder, driver)
+        drive(world, ego, tm, phases, console, emulator, sim, nav, recorder, driver)
     finally:
         if driver:
             print(driver.report())
@@ -451,9 +623,10 @@ if __name__ == "__main__":
     parser.add_argument("--record", metavar="DIR", help="relative dir: CARLA bird's-eye frames + Pleos screen video")
     parser.add_argument("--log", metavar="FILE", help="relative path: CSV of every value the consoles accepted")
     parser.add_argument("--driver", action="store_true", help="drive with driver.py's careful driver, no traffic")
+    parser.add_argument("--map", choices=sorted(MAP_STARTS), help="a real-city map from maps/ instead of a town")
     args = parser.parse_args()
     if args.record and (args.dry_run or os.path.isabs(args.record)):
         parser.error("--record needs the emulator and a path relative to tools/carla")
     if args.log and (args.dry_run or os.path.isabs(args.log)):
         parser.error("--log needs the emulator and a path relative to tools/carla (the container sees only that)")
-    run(args.seconds, args.dry_run, args.record, args.log, args.driver)
+    run(args.seconds, args.dry_run, args.record, args.log, args.driver, args.map)

@@ -84,7 +84,8 @@ data class RoadTest(
             braking = sample.pressed,
             stop = stop?.copy(brakeOffNs = if (sample.pressed) null else stop.brakeOffNs ?: sample.tNs),
         ) to emptyList()
-        is Sample.Turn, is Sample.Steering, is Sample.SeatBelt, is Sample.SpeedLimit, is Sample.Location ->
+        is Sample.Turn, is Sample.Steering, is Sample.SeatBelt, is Sample.SpeedLimit, is Sample.Location,
+        is Sample.SpeedCameras ->
             this to emptyList()
     }
 

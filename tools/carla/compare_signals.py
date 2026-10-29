@@ -4,6 +4,7 @@
 
 bridge.csv  `wall_ms,kind,value[,value2]` from `bridge.py --log` (Mac clock, time the write started). `kind?` rows are
             writes that got no answer (the console may or may not hold that value) and possible console resets.
+            belt, limit and cameras went over the simulator channel (③) instead, in the app's own format.
 app.csv     `# wall_ms=<ms> t_ms=<ms>` anchor, then `t_ms,kind,value[,value2]` from SignalRecordTest
             (emulator elapsedRealtime: HAL time for speed and gear, callback time for the rest). Speed's value2 is
             the ms from its HAL time to the app's callback (missing in recordings before 10/28 15:00).
@@ -19,7 +20,7 @@ out the same way. A wrong unit never matches at any lag. Console
 outages (no answered write for STALL_MS) are left out the same way: around them writes answered 503 were seen to
 take effect anyway and values to land seconds late, so the bridge log no longer says what the console holds. Per signal, with bridge values mapped to what the app should report:
   explained  each app value was a value the console may have held within WINDOW_MS (wrong unit, sign, mapping)
-  agree      gear/brake/turn: share of the drive the app's current value matches the console's (inverted, stuck or
+  agree      on-change signals (gear/brake/turn, and ③'s belt/limit/cameras): share of the drive the app's current value matches the console's (inverted, stuck or
              early-reverted on-change signals, which report right at the bridge's changes and so pass `explained`)
   coverage   each value the bridge changed to shows up in the app, in order, before the bridge changed it again
              (lost updates; also fails on MAX_UNSHOWN_RUN misses in a row: a listener that died); delay is informational
@@ -53,7 +54,7 @@ MIN_ALIGNED = 0.5  # share of bridge speed changes the clock alignment must matc
 MAX_SPEED_INTERVAL_MS = 150  # median spacing of app speed samples: it must come at about 10 Hz
 EXPLAINED_MIN = 0.99
 AGREE_MIN = 0.98
-COVERAGE_MIN = 0.95  # gear, brake, turn: held values
+COVERAGE_MIN = 0.95  # DISCRETE signals: held values
 CONTINUOUS_COVERAGE_MIN = 0.5  # speed, steering, loc change faster than the app samples them
 MAX_UNSHOWN_RUN = 5  # bridge changes in a row the app never showed (a real run had at most 2)
 MAX_STALLED = 0.5
@@ -69,9 +70,14 @@ EXPECT: Dict[str, Callable[[List[str]], List[object]]] = {
     "steering": lambda v: [-float(v[0])],  # the SDK reports -(console value)
     "turn": lambda v: [TURN[v[0]]],
     "loc": lambda v: [float(x) for x in v],
+    # Simulator channel (③): the same line the app records, taken in place of the car's value.
+    "belt": lambda v: [v[0]],
+    "limit": lambda v: [v[0]],
+    "cameras": lambda v: [v[0]],
 }
 TOLERANCE = {"speed": 0.05 / 3.6, "steering": 0.5, "loc": 2e-6}
-DISCRETE = {"gear", "brake", "turn"}
+DISCRETE = {"gear", "brake", "turn", "belt", "limit", "cameras"}
+SIM = "sim"  # bridge.py logs this once when it opens the simulator channel (③); not a signal
 # Signals the app must report right after start (10 Hz speed, or a getter read for the on-change ones).
 FIRST_CHECKED = {"speed", "gear", "brake", "turn", "steering", "belt"}
 
@@ -210,7 +216,7 @@ def agreement(kind: str, line: Timeline, got: List[Row], run: Run) -> Tuple[int,
 
 def coverage(kind: str, line: Timeline, got: List[Row], run: Run) -> Tuple[Tuple[int, int], int, List[int]]:
     """-> ((changes shown, changes judged), longest run of unshown changes, delays).
-    For gear/brake/turn each change must be shown by a later app row than the previous change (a lost brake tap is
+    For DISCRETE signals each change must be shown by a later app row than the previous change (a lost brake tap is
     not covered by its neighbour). Not for speed/steering/loc: their values recur within the window, so chaining
     would latch onto a later recurrence and skip real matches. The bridge's first change may be shown by the app's
     value from before the bridge started, and an unanswered write of the same value since the previous change may
@@ -334,6 +340,14 @@ def failures(results: Dict[str, Result]) -> Tuple[List[str], List[str]]:
     return hard, out
 
 
+def unconnected(offered: bool, sent: Series) -> List[str]:
+    """The bridge sends belt on ③ as soon as the app connects: none in its log means the app never did, and then
+    belt, limit and cameras would go unchecked rather than fail."""
+    if offered and "belt" not in sent:
+        return ["belt: the bridge opened the simulator channel (③), the app never connected (adb reverse? debug build?)"]
+    return []
+
+
 def ratio(pair: Optional[Tuple[int, int]]) -> str:
     if pair is None:
         return "-"
@@ -354,6 +368,7 @@ def report(results: Dict[str, Result]) -> None:
 
 def main(bridge_path: str, app_path: str) -> int:
     _, sent = read(bridge_path)
+    offered = sent.pop(SIM, None) is not None
     anchor, app = read(app_path)
     if anchor is None:
         raise SystemExit(f"{app_path}: missing the '# wall_ms=.. t_ms=..' anchor line")
@@ -374,6 +389,7 @@ def main(bridge_path: str, app_path: str) -> int:
           f"{unanswered} unanswered writes or possible resets")
     report(results)
     hard, timed = failures(results)
+    hard += unconnected(offered, sent)
     if out > MAX_STALLED and not hard:
         for p in timed:
             print(f"(not judged) {p}")

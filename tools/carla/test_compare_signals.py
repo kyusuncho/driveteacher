@@ -1,7 +1,7 @@
 """python3 -m unittest test_compare_signals   (from tools/carla)"""
 import unittest
 
-from compare_signals import analyze, clock_offset, failures, shifted
+from compare_signals import analyze, clock_offset, failures, shifted, unconnected
 
 SKEW_MS, LAG_MS = -760, 80  # app clock behind the bridge's, plus delivery delay
 RECEIPT_MS = 5  # from speed's HAL time to the app's callback
@@ -144,6 +144,12 @@ class CompareSignalsTest(unittest.TestCase):
         sent, app = drive()
         app["speed"] = [(t, [str(float(v[0]) * 3.6)] + v[1:]) for t, v in app["speed"]]  # km/h reported as m/s
         self.assertTrue(any(p.startswith("speed: only") for p in check(sent, app)[1]))
+
+    def test_simulator_channel_the_app_never_joined_fails(self):
+        sent, _ = drive()
+        self.assertEqual([], unconnected(False, sent), "an older bridge without the channel")
+        self.assertEqual(1, len(unconnected(True, sent)))
+        self.assertEqual([], unconnected(True, {**sent, "belt": [(0, ["true"])]}))
 
     def test_missing_initial_read_fails(self):
         sent, app = drive()

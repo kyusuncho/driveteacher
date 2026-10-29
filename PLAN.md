@@ -77,6 +77,7 @@ Pleos Connect(AAOS 14) 앱입니다. 두 가지 모드가 있습니다.
 | 착석 | SDK `Seat` | 콘솔과 **반대로** 읽힘 | 에뮬레이터의 착석 값은 믿지 않음 |
 | 주행거리 | SDK `Odometer` | 주행해도 콘솔이 거리를 늘리지 않음. 3~5초마다 옴 | 거리는 차속을 적분해 직접 계산 (100km당 점수용) |
 | 제한속도 | NaviHelper `onCurrentRoadSpeedLimit` | 초당 1회 오지만 **항상 0.** 내장 내비가 주입한 GPS를 받지 못해(에뮬레이터 GPS 데이터의 체크섬 오류) 지도 위치가 기본값에 고정됨. 경로 안내를 켜도 같음 | 시연은 ③ 채널로 제한속도를 넣음. 실차의 값과 단위는 확인할 수 없음 |
+| 단속 카메라 | NaviHelper `onCameraAlert` | **한 번도 안 옴**(목적지 없이 달릴 때, 경로 안내 중 모두. 10/29 실측 기록 재확인). 제한속도와 같은 이유. 체크섬을 맞춘 GPS 문장(`geo nmea`)을 보내도 내비에는 에뮬레이터가 다시 만든 `*47` 문장만 도착함 | 시연은 ③ 채널로 공공데이터의 카메라를 넣음(3단계). 문서에는 이 이벤트의 발생 조건과 거리·속도 단위가 없음 |
 | 위치 | Pleos FusedLocation 1.1.3 | 주입한 GPS를 오차 없이 초당 약 1회 받음. 속도 값은 없음. 사용자 동의 권한 | 위치는 이것으로, 속도는 차속 신호로 |
 | 음성 | Pleos TTS SDK 3.3.1, `Mode.ON_DEVICE` | **클라이언트 ID 없이 한국어 합성됨**(화자 seoyoon). 첫 문장은 끝날 때까지 8.8초, 두 번째부터 3.3초(첫 호출에 엔진 로딩). 재생 완료 콜백까지 확인했고, 소리는 아직 귀로 듣지 않음 | **음성은 이것으로 함 (10/28 결정).** P단에서 미리 초기화 |
 | 주행 규제 | `CarUxRestrictionsManager` | P단: 제한 없음. D단(0km/h 포함)·R단: 영상·애니메이션 금지, 설정 화면 금지. 속도 구간은 없음. 글자 수 제한은 켜지지 않음 | 주행 중 화면은 애니메이션 없이. 지역에 따라 켜지는 글자 수 제한도 처리해 둠 |
@@ -127,16 +128,16 @@ CARLA 0.9.15 (Docker, 렌더링 없음)
    │
 bridge.py ─① Virtual Console HTTP (8088) ──→ 차속·기어·페달·조향·방향지시등 ──→ Vehicle SDK / CarProperty ─┐
    ├──────② 에뮬레이터 콘솔 (5554) geo fix ──→ GPS ──────────────────→ 위치 ───────────────────────┤
-   └──────③ 시뮬레이터 정보 채널 (새로 만듦) ──→ 차선 접촉·정지선·신호·제한속도·코스 구간 ────────────┤
+   └──────③ 시뮬레이터 정보 채널 (7777) ──→ 안전벨트·제한속도·단속 카메라 (예정: 차선 접촉·정지선·신호·코스 구간) ─┤
                                                                                                    ▼
                                   앱: 신호 수집 → 판정 엔진(순수 Kotlin) → 감점 알림(화면 + 음성) → 결과 리포트
 ```
 
 - ①과 ②는 이미 동작합니다. 방향지시등도 ①로 넣습니다(CARLA 교통 관리자가 켜는 깜빡이). 전조등, 와이퍼도 넣을 수 있습니다. 실차에서는 SDK가 같은 신호를 줍니다.
 - ③은 시뮬레이터에만 있습니다. 실차에서는 ③이 없으므로, ③이 필요한 항목은 꺼집니다.
-- 에뮬레이터에서 넣을 수 없는 **안전벨트 착용 상태와 제한속도**도 시연에서는 ③으로 보냅니다. 실차에서는 SDK(`Seat`)와 NaviHelper가 이 값을 줍니다.
+- 에뮬레이터에서 넣을 수 없는 **안전벨트 착용 상태, 제한속도, 단속 카메라**도 시연에서는 ③으로 보냅니다. 실차에서는 SDK(`Seat`)와 NaviHelper가 이 값을 줍니다. 앱은 ③에서 어떤 종류의 값을 한 번이라도 받으면, 그때부터 같은 종류의 차량 값을 버리고 ③ 값을 씁니다(`Overrides`). ③이 없으면 차량 값을 그대로 씁니다.
 - **채점은 앱에서만 합니다.** 브리지는 "무슨 일이 있었는지"만 보내고, 몇 점을 깎을지는 앱의 판정 엔진이 정합니다. 그래서 채점 규칙이 한 곳에만 있습니다.
-- ③은 `adb reverse`로 연결한 TCP 소켓에 한 줄짜리 JSON을 보내는 방식입니다(예: `{"t":12.3,"fact":"stop_line_crossed","light":"Red"}`). 따로 라이브러리가 필요 없습니다. ③은 **debug 빌드에만** 넣습니다(9절, 10/28 결정).
+- ③은 `adb reverse tcp:7777`로 연결한 TCP 소켓에 **앱의 녹화 CSV 한 줄에서 시각을 뺀 것**을 보내는 방식입니다(예: `limit,50`, `belt,true`). 앱은 받은 시각을 붙여 녹화 줄과 같은 코드(`simSample`, `parseSample`)로 읽습니다. 처음에는 JSON으로 하려 했지만, 같은 형식이면 해석 코드가 하나이고 녹화본 재생(9절)에도 그대로 쓸 수 있어 바꿨습니다(10/29). ③은 **debug 빌드에만** 넣습니다(9절, 10/28 결정). release에는 빈 구현(`src/release/.../SimChannel.kt`)만 있습니다.
 
 ---
 
@@ -242,7 +243,8 @@ bridge.py ─① Virtual Console HTTP (8088) ──→ 차속·기어·페달·�
 | 조향 | `SteeringWheel` | 문서는 앞바퀴 각도라고 하지만, 범위(−470~500°)는 핸들 각도에 가까움 |
 | 방향지시등, 안전벨트, EV 전비 | Vehicle SDK | 안전벨트는 `Seat` |
 | 주행거리 | 차속을 적분 | 에뮬레이터의 `Odometer`는 주행해도 늘지 않음 |
-| 제한속도 | NaviHelper (1초마다) | 내장 내비 차량에서만. 에뮬레이터는 항상 0 |
+| 제한속도 | NaviHelper (1초마다) | 내장 내비 차량에서만. 에뮬레이터는 항상 0. 시뮬레이터는 ③ (CARLA 표지판, `--map`이면 OSM 제한속도) |
+| 단속 카메라 | NaviHelper `onCameraAlert` | 종류·제한속도·남은 거리·과속 여부. 내장 내비 차량에서만. 에뮬레이터는 안 옴. 시뮬레이터는 ③ (공공데이터). 지금은 기록만 하고 채점에는 쓰지 않음(10/29 결정) |
 | 위치 | FusedLocation (사용자 동의 권한) | 속도 값은 없음 |
 | 가속도·회전 센서, 가속 페달 | 없음 | 급회전은 차속과 조향으로 추정 |
 
@@ -367,6 +369,15 @@ bridge.py ─① Virtual Console HTTP (8088) ──→ 차속·기어·페달·�
 - 리뷰 반영: 한 번 서기로 한 신호는 노란불에서도, 정지선을 조금 지나쳐도 계속 섭니다. 최대 감속(2.2m/s²)은 가까이서 바뀐 신호에만 쓰고, 제한속도가 낮아질 때는 계획 감속으로 줄입니다.
 - 함께 고친 브리지 문제: 부하로 늦어진 시뮬레이션을 연달아 진행해 따라잡던 방식을 없앴습니다. 따라잡으면 몇 초 동안의 주행이 더 짧은 실제 시간에 몰려, 앱에는 속도가 실제보다 몇 배 빠르게 변한 것으로 보입니다(첫 시도에서 0→22km/h가 1.3초 만에 오름). 이제는 늦어지면 그만큼 주행이 길어집니다. 위 8차 자동 주행의 거친 가감속 중 일부도 이 때문이었을 수 있습니다. 시작할 때 차가 땅에 떨어지며 생기는 수직 속도도 콘솔에 보내지 않습니다.
 
+**실제 도로 지도와 단속 카메라 (10/29 ✅).** 실차에서는 NaviHelper가 제한속도와 단속 카메라 알림을 주지만, 에뮬레이터에서는 받을 수 없습니다(1절). 그래서 안전벨트처럼 시뮬레이터가 대신 만들어 ③으로 넣습니다.
+- 지도: 강남역~역삼역(약 1.4×0.9km)의 OpenStreetMap 차도를 CARLA 변환기(Osm2Odr)로 OpenDRIVE로 바꿔 올립니다(`bridge.py --map gangnam`). 변환은 1초, 올리는 데는 약 10초 걸립니다. 지도 중심에 맞춘 투영을 주면 CARLA가 차 위치를 실제 위경도로 바꿔 줍니다(원점에서 약 1m 오차). 그래서 GPS에도 실제 강남 좌표가 들어갑니다.
+- 제한속도: 변환기는 제한속도 태그가 없는 도로에 SUMO 기본값을 넣습니다(테헤란로 100km/h). 그래서 변환 전에 안전속도 5030(큰길 50, 이면도로 30)으로 채웁니다. CARLA의 `get_speed_limit()`은 표지판만 읽어 이 지도에서는 늘 30이므로, 도로별 값은 OpenDRIVE 파일에서 읽습니다.
+- 단속 카메라: 공공데이터포털의 경찰청 「전국무인교통단속카메라표준데이터」(4만 3천여 대)에서 지도 안의 속도 단속 카메라 7대를 `maps/gangnam-cameras.csv`로 뽑았습니다. 주정차·버스전용 카메라(제한속도 0)는 뺍니다. 표준 코드표를 찾지 못해 코드 뜻은 데이터로 추정했습니다. 단속구분 1은 과속, 2는 신호(제한속도 포함), 4는 주정차입니다. 보호구역 2는 어린이보호구역이고, 구간 1·2는 구간단속 시점·종점입니다.
+- 알림: 지금 달리는 도로와 이름이 같고, 500m 안에 있고, 진행 방향 ±45° 안에 있는 카메라를 가까운 순으로 1초마다 보냅니다. 형식은 NaviHelper `CameraAlert`(종류, 제한속도, 남은 거리, 과속 여부)와 같습니다. 구간단속 평균속도는 계산하지 않습니다.
+- 앱: debug 빌드의 `SimChannel`이 ③을 받고, ③이 보낸 종류의 차량 값은 버립니다(4절). 실차 경로인 NaviHelper `onCameraAlert`도 같은 `Sample.SpeedCameras`로 모읍니다. 채점에는 아직 쓰지 않습니다(10/29 결정).
+- 문제와 대응: 변환기가 일부 교차로 연결을 빠뜨립니다. 첫 시도에서 차가 끊긴 차선 끝(테헤란로 도로 2968의 −1차선)을 지나 바닥이 없는 곳으로 떨어졌습니다. 이제 운전 스크립트는 차선이 끝나면 그 앞에 섭니다. 브리지는 직진으로 900m 넘게 이어지는 차선에서 출발합니다(테헤란로, 강남역 → 역삼역 방향).
+- 결과: `check_signals.sh 100 --driver --map gangnam`(10/29 오전) **PASS.** 앱이 ③으로 받은 안전벨트·제한속도·카메라 알림이 브리지 값과 100% 일치했습니다. 카메라 알림은 119줄이었고, 바뀐 42번이 모두 순서대로 기록됐습니다. 차는 37.9km/h로 테헤란로를 달려 역삼역교차로 카메라 한 대를 지났고, 다음 카메라 54m 앞에서 섰습니다. 1초 변화율은 최대 +6.3/−8.7km/h였습니다. 콘솔이 응답하지 않은 구간 34%는 판정에서 뺐습니다(그때 Mac 스왑 9GB 사용 중). 이어서 지도 없이(`check_signals.sh 60 --driver`) 돌린 Town10HD 주행도 PASS였습니다. 강남 지도가 남아 있으면 브리지가 Town10HD를 다시 올리고, Town에서는 CARLA 표지판 제한속도(30km/h)와 안전벨트만 ③으로 보냅니다.
+
 사람이 직접 운전하려면 3D 화면이 필요하고, 그러려면 GPU PC가 있어야 합니다. 이 부분은 나중에 합니다.
 
 ### 4단계. 코스
@@ -388,6 +399,7 @@ bridge.py ─① Virtual Console HTTP (8088) ──→ 차속·기어·페달·�
 - **기획서:** 심사 네 항목에 맞춰 씁니다. 사업성(타깃, 예상 MAU 계산식과 가정, 리텐션, 확대 계획)은 지금 계획에 없으므로 새로 씁니다. 수치는 출처가 있는 것만 쓰고, 가정은 "가정"이라고 표시합니다. 기획서에 "핵심 기능"으로 쓴 것은 PT에서 보여 줘야 하므로, 12/2까지 확실히 되는 것만 핵심 기능으로 씁니다.
 - **release APK:** 서명 키는 저장소 밖에 두고(`.gitignore`에 키 파일 패턴 추가), 깨끗한 에뮬레이터에 설치해 확인합니다. 신호 수집 권한은 1단계에서 main 매니페스트로 옮겼습니다. 지금 debug에만 있는 DO 선언과 TTS 권한도 옮기고, `CAR_SPEED`와 `FUSED_LOCATION`(사용자 동의 권한)은 앱 화면에서 요청합니다.
 - **README.md**(필수 4항목), 오픈소스 고지(CARLA 코드 MIT, 에셋 CC-BY 등. 원문 확인 필요), 데모 영상 글꼴을 OFL 글꼴로 교체
+- 지도·데이터 출처 표시: 강남 지도는 "© OpenStreetMap contributors"(ODbL, 영상에도 표시), 단속 카메라는 경찰청 「전국무인교통단속카메라표준데이터」(공공데이터포털). 이용 조건 원문은 제출 전에 확인
 - **앱 이름·패키지명** 확정(`com.kyusun.pleos`, 라벨 "Pleos Test" 변경). 첫 release APK 전에 정하고, Pleos·현대차 상표는 쓰지 않습니다.
 - **시연 영상 재녹화:** 지금 영상은 우리 앱이 "주행 중에는 사용할 수 없습니다"로 막힌 장면이라 그대로 내지 않습니다. 감점 문구와 음성이 붙은 뒤 다시 녹화하고, "CARLA 자동 주행 시나리오, 안전벨트·제한속도는 시뮬레이터 값"이라고 자막을 넣습니다.
 - 개인정보처리방침. 위치를 저장한다면 위치정보 이용약관도 필요합니다.
@@ -446,6 +458,8 @@ bridge.py ─① Virtual Console HTTP (8088) ──→ 차속·기어·페달·�
 | CARLA가 CPU를 많이 써서 전송의 약 2%가 빠짐 | 순간 값 누락 | 4코어로 제한했고, 0.1초 뒤 다음 값이 덮어씀. 판정은 시뮬레이터 정보 채널 기준으로 함 |
 | CARLA 렌더링 없음 | 3D 화면과 카메라 없음, 사람이 운전하기 어려움 | 위에서 내려다본 그림(`bev.py`)으로 시연. 직접 운전은 GPU PC가 생기면 |
 | 장내기능 코스 제작이 오래 걸림 | 4단계 지연 | 도로주행 코스(Town 맵)를 먼저 함 |
+| OSM에서 바꾼 지도의 일부 차선이 교차로 앞에서 끊김 | 차가 끊긴 곳에서 바닥 없는 곳으로 빠짐(10/29 실제로 발생) | 운전 스크립트는 차선이 끝나면 그 앞에 섬. 출발 차선은 직진으로 900m 이상 이어지는 것만 고름. 다른 경로를 쓰려면 같은 검사를 거침 |
+| 단속 카메라 데이터에 방향이 없음 | 같은 도로의 반대 방향 카메라도 알림에 나옴 | 시연 경로(테헤란로 동쪽 방향)에서는 역삼역교차로 두 대가 함께 나옴. 실차는 NaviHelper가 방향을 판단함 |
 | 저작권·상표·초상권 | 분쟁, 수상 취소와 상금 환수 | 공단 자료, 브랜드명, "공식" 표현 사용 안 함. ADAS 경고는 점수에 안 씀. 오픈소스 고지, 사람 얼굴이 나온 카메라 사진과 EVS 녹화 영상은 공개하지 않음 |
 | 기획서의 핵심 기능을 PT까지 못 만듦 | "사실과 다름"으로 선정 취소 위험 | 기획서에는 12/2까지 확실한 것만 핵심 기능으로 쓰고, 나머지는 확대 계획으로 |
 | PT 현장에서 CARLA 생중계가 멈춤 | 순위를 정하는 시연 실패 | 데모 재생을 기본 시연으로. 녹화 영상만 트는 것은 "동작하는 앱 시연" 요건을 못 채울 수 있음. 인터넷을 끄고 리허설 |
@@ -466,7 +480,10 @@ bridge.py ─① Virtual Console HTTP (8088) ──→ 차속·기어·페달·�
 | `app/src/test/`, `app/src/androidTest/.../signal/` | `SampleTest`(CSV 형식), `EventDetectorTest`·`RoadTestTest`(8차 CARLA 녹화 포함, `src/test/resources/`, 공용 도구 `TestDrives.kt`), `SignalRecordTest`(신호 흐름을 `cache/signals.csv`로 녹화) |
 | `app/src/androidTest/.../probe/` | 0단계 실측 테스트: `VehicleSignalProbeTest`, `NaviLocationProbeTest`, `UxAudioProbeTest` |
 | `app/src/debug/` | 실측용 권한, DO 선언 화면(`DoProbeActivity`). release 빌드에는 들어가지 않음 |
-| `tools/carla/` | `bridge.py`(CARLA → Pleos), `run.sh`, `bev.py`(내려다본 그림), `make_demo.sh`(데모 영상 합성), `check_signals.sh` + `compare_signals.py`(1단계 검증, 테스트 `test_compare_signals.py`), `driver.py`(응시자처럼 운전하는 스크립트, `--driver`), `compose.yaml`, `Dockerfile` |
+| `tools/carla/` | `bridge.py`(CARLA → Pleos, ③ 채널 포함), `run.sh`, `bev.py`(내려다본 그림), `make_demo.sh`(데모 영상 합성), `check_signals.sh` + `compare_signals.py`(1단계 검증, 테스트 `test_compare_signals.py`), `driver.py`(응시자처럼 운전하는 스크립트, `--driver`), `traffic_info.py`(OSM 지도 제한속도, 단속 카메라 고르기·알림 계산, 테스트 `test_traffic_info.py`), `compose.yaml`, `Dockerfile` |
+| `tools/carla/maps/` | `gangnam.osm`(강남역~역삼역 OSM, 차도만), `gangnam-cameras.csv`(그 안의 단속 카메라 7대). 만드는 방법은 `traffic_info.py` 첫머리 |
+| `app/src/debug/.../signal/SimChannel.kt` | ③ 수신. release에는 빈 구현 |
+| `data/` | 공공데이터포털에서 받은 전국 단속 카메라 CSV(9MB, CP949). **git에서 제외** |
 | `assets/` | `carla-pleos-demo.mp4`/`.gif`, 스크린샷, 카메라·EVS 캡처. **git에서 제외** (큰 파일이고, 카메라 사진에 사람 얼굴이 있음) |
 | `assets/experiments/` | 실험 녹화(`make_demo.sh` 결과). 근거로 남기려고 이것만 git에 넣음: `carla-careful-drive-1029/`(운전 스크립트 주행) |
 
@@ -479,11 +496,12 @@ tools/carla/run.sh --seconds 120      # Pleos 에뮬레이터에 연결
 cd tools/carla && ./run.sh --seconds 90 --record recording && ./make_demo.sh recording ../../assets   # 데모 영상
 tools/carla/check_signals.sh 90       # 1단계 검증: 앱이 기록한 신호 = 브리지가 보낸 값 (PASS 0, FAIL 1, 판정 불가 2)
 tools/carla/check_signals.sh 120 --driver   # 같은 검증을 운전 스크립트로. 앱 기록은 tools/carla/signals/app.csv
+tools/carla/check_signals.sh 100 --driver --map gangnam   # 강남 지도에서. ③의 안전벨트·제한속도·단속 카메라도 비교
 cd tools/carla && ./check_signals.sh 100 --driver --record recording/careful-1029 && ./make_demo.sh recording/careful-1029 ../../assets/experiments/carla-careful-drive-1029   # 검증하며 촬영 (녹화 최대 180초)
 
 # 단위 테스트
 ./gradlew :app:testDebugUnitTest
-cd tools/carla && python3 -m unittest test_compare_signals
+cd tools/carla && python3 -m unittest test_compare_signals test_traffic_info
 
 # 차량 신호 실측 (약 2.5분). 콘솔 주행거리가 1km씩 늘어남(콘솔은 줄일 수 없음)
 ./gradlew :app:installDebug :app:installDebugAndroidTest
