@@ -3,8 +3,6 @@
 
     <uses-feature android:name="android.hardware.type.automotive" android:required="true" />
 
-    <uses-permission android:name="pleos.car.permission.CAR_DOORS" />
-
     <!-- signal/SignalCollector. Vehicle SDK domains are normal permissions; on a real car only within the scope
          agreed with the Pleos App Market. -->
     <uses-permission android:name="pleos.car.permission.CAR_DRIVE" /> <!-- brake, steering -->
@@ -15,9 +13,18 @@
     <!-- Road speed limit. Which NAVI_* permission gates it is not documented; NAVI_ROUTE is the read-only one. -->
     <uses-permission android:name="pleos.car.permission.NAVI_ROUTE" />
     <uses-permission android:name="pleos.car.permission.FUSED_LOCATION" /> <!-- dangerous: runtime grant -->
+    <uses-permission android:name="pleos.car.permission.TTS_SERVICE" /> <!-- Voice: penalties spoken -->
 
     <application android:label="Pleos Test">
-        <activity android:name=".MainActivity" android:exported="true">
+        <!-- Kept on screen while driving (distractionOptimized; a real car needs Pleos App Market approval for it).
+             Handles configuration changes itself: recreating it would restart the road test mid-drive.
+             ponytail: views are built in code and do not follow a day/night switch until the next launch. -->
+        <activity
+            android:name=".MainActivity"
+            android:configChanges="uiMode|orientation|screenSize|smallestScreenSize|screenLayout|density|keyboard|keyboardHidden|navigation|locale|layoutDirection|fontScale"
+            android:exported="true"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
+            <meta-data android:name="distractionOptimized" android:value="true" />
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

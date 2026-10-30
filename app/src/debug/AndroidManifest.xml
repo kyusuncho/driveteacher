@@ -20,11 +20,10 @@
     <uses-permission android:name="android.car.permission.CAR_MILEAGE" />
     <uses-permission android:name="android.car.permission.CAR_VENDOR_EXTENSION" />
 
-    <!-- probe/NaviLocationProbeTest: route requests, android.location, Pleos TTS (normal). NAVI_ROUTE and FUSED_LOCATION are in main. -->
+    <!-- probe/NaviLocationProbeTest: route requests, android.location. NAVI_ROUTE, FUSED_LOCATION and TTS_SERVICE are in main. -->
     <uses-permission android:name="pleos.car.permission.NAVI_ROUTE_SEARCH" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-    <uses-permission android:name="pleos.car.permission.TTS_SERVICE" />
 
     <!-- probe/UxAudioProbeTest: heads-up notification while driving (runtime permission since API 33). -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />

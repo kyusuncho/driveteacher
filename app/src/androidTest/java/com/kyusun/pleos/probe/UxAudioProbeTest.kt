@@ -42,6 +42,7 @@ import kotlin.math.sin
  * distraction-optimized activity (DoProbeActivity, debug only) stays in front while the non-DO MainActivity is
  * blocked, audio-focus grants per usage, prompt playback, toast / heads-up. Shell commands (dumpsys, cmd) run
  * through UiAutomation; screenshots and full audio dumps go to cache/ux-*.
+ * Measured 10/28, when MainActivity was not DO; it is since 10/30 (5단계), so a rerun no longer shows the blocked case.
  *   ./gradlew :app:installDebug :app:installDebugAndroidTest
  *   adb shell am instrument -w -e class com.kyusun.pleos.probe.UxAudioProbeTest \
  *     com.kyusun.pleos.test/androidx.test.runner.AndroidJUnitRunner

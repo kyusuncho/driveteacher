@@ -269,7 +269,7 @@ bridge.py ─① Virtual Console HTTP (8088) ──→ 차속·기어·페달·�
 | 제약 | 상태 | 대응 |
 |---|---|---|
 | **DO(주행 중 표시)** | 에뮬레이터에서는 액티비티에 아래 한 줄로 동작. 실차는 Pleos 앱마켓 승인 필요. 정책상 주행 중 기능이 허용되는 카테고리는 음악·오디오, 내비, 모빌리티 서비스뿐 | 에뮬레이터 시연 기준으로 진행. 실차 승인은 이번 범위 밖 |
-| **음성** | 표준 TTS 사용 불가. **Pleos TTS SDK 3.3.1의 ON_DEVICE 모드는 클라이언트 ID 없이 동작** (10/19 릴리스 노트에 문서화됨) | **TTS SDK로 함 (10/28 결정).** 첫 합성이 느리므로 P단에서 미리 초기화. 재생은 `USAGE_ASSISTANCE_NAVIGATION_GUIDANCE` + `AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK`. 음성 앞에 0.15~0.2초 무음(Pleos 오디오 가이드). SDK가 오디오 포커스를 직접 잡는지는 5단계에서 확인 |
+| **음성** | 표준 TTS 사용 불가. **Pleos TTS SDK 3.3.1의 ON_DEVICE 모드는 클라이언트 ID 없이 동작** (10/19 릴리스 노트에 문서화됨) | **TTS SDK로 함 (10/28 결정).** 첫 합성이 느리므로 P단에서 미리 초기화. 재생은 `USAGE_ASSISTANCE_NAVIGATION_GUIDANCE` + `AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK`. 음성 앞에 0.15~0.2초 무음(Pleos 오디오 가이드)은 SDK가 글자만 받아서 못 넣음. **확인(10/30): 음성 서비스는 포커스 없이 재생하므로 앱이 포커스를 잡고 놓음. 재생 중에 다음 문장을 보내면 앞 문장이 끊기므로 앱이 한 문장씩 차례로 보냄** |
 | **Vehicle SDK 권한** | `CAR_DRIVE`, `CAR_LIGHTS`, `CAR_SAFETY`, `CAR_ENERGY`, `CAR_WINDOWS`는 Pleos 앱마켓과 사전 협의한 범위에서만 사용 가능 | 에뮬레이터에서 동작하는 범위로 진행. 실차 승인은 이번 범위 밖. 문서상 일반 앱에 허용되지 않는 `PRIVATE_CAR_SAFETY`(경고등 읽기)는 에뮬레이터에서 되더라도 쓰지 않음 |
 | 주행 중 자원 | CPU 5% 미만, 메모리 400MB 이하 | 판정 엔진은 가볍게, 화면 갱신 최소화 |
 | 화면 규제 | DO 앱도 CarUxRestrictions를 직접 따라야 함. 에뮬레이터는 D·R단이면 속도와 관계없이 영상·애니메이션과 설정 화면을 막음 | 주행 중 화면은 정지 화면 + 한 줄 문구. 지역별로 켜지는 글자 수 제한도 처리 |
@@ -391,6 +391,8 @@ bridge.py ─① Virtual Console HTTP (8088) ──→ 차속·기어·페달·�
 - 주행 중: 한 줄 감점 문구와 Pleos TTS 음성. DO 선언, CarUxRestrictions 대응
 - 앱에서 신호 수집을 돌릴 때 `Car.createCar`에 생명주기 리스너를 붙임. 지금 방식(리스너 없음)은 CarService가 재시작되면 앱 프로세스가 같이 종료됨(AOSP 동작, 1단계 리뷰에서 지적)
 - **완료 기준:** P↔D 전환할 때 화면이 정책대로 바뀜(이 에뮬레이터에는 `hmg_car_service`가 없어 주행 규제 명령은 쓸 수 없음). 데모 영상에서 CARLA 상황과 감점 문구·음성이 맞게 나옴
+- **최소판 (10/30 ✅, 에뮬레이터 Virtual Console로 확인):** 앱을 켜면 채점을 시작합니다(실행 한 번에 시험 한 번). 주행 중(UX 제한 있음)에는 점수와 마지막 감점 한 줄, 주차 중에는 점수와 감점 내역 전체를 보여 줍니다. 70점 미만이면 "불합격", 실격이면 "실격". 감점마다 "진로변경 신호 불이행, 7점 감점되었습니다."처럼 말합니다. DO 선언과 TTS 권한을 main으로 옮겼고, 차속 권한은 앱이 요청합니다. `Car.createCar`에 생명주기 리스너를 붙였습니다(신호 수집과 화면 둘 다). 쓰지 않게 된 `CAR_DOORS` 권한은 뺐습니다.
+  - 남은 것: CARLA 주행 영상으로 확인(완료 기준 두 번째), 코스 선택·시작 버튼·결과 화면, 채점을 서비스로 옮기기(지금은 화면을 닫으면 끝남), 주야간 전환 때 화면 색
 
 ### 6단계. 모드 2와 1-a
 - 트립 리포트, 점수 추이
@@ -398,7 +400,7 @@ bridge.py ─① Virtual Console HTTP (8088) ──→ 차속·기어·페달·�
 
 ### 7단계. 심사·제출 준비
 - **기획서:** 심사 네 항목에 맞춰 씁니다. 사업성(타깃, 예상 MAU 계산식과 가정, 리텐션, 확대 계획)은 지금 계획에 없으므로 새로 씁니다. 수치는 출처가 있는 것만 쓰고, 가정은 "가정"이라고 표시합니다. 기획서에 "핵심 기능"으로 쓴 것은 PT에서 보여 줘야 하므로, 12/2까지 확실히 되는 것만 핵심 기능으로 씁니다.
-- **release APK:** 서명 키는 저장소 밖에 두고(`.gitignore`에 키 파일 패턴 추가), 깨끗한 에뮬레이터에 설치해 확인합니다. 신호 수집 권한은 1단계에서 main 매니페스트로 옮겼습니다. 지금 debug에만 있는 DO 선언과 TTS 권한도 옮기고, `CAR_SPEED`와 `FUSED_LOCATION`(사용자 동의 권한)은 앱 화면에서 요청합니다.
+- **release APK:** 서명 키는 저장소 밖에 두고(`.gitignore`에 키 파일 패턴 추가), 깨끗한 에뮬레이터에 설치해 확인합니다. 신호 수집 권한은 1단계에서, DO 선언과 TTS 권한은 5단계에서 main 매니페스트로 옮겼습니다. `CAR_SPEED`는 앱이 요청합니다(10/30). `FUSED_LOCATION`은 채점에 쓰지 않아 요청하지 않습니다.
 - **README.md**(필수 4항목), 오픈소스 고지(CARLA 코드 MIT, 에셋 CC-BY 등. 원문 확인 필요), 데모 영상 글꼴을 OFL 글꼴로 교체
 - 지도·데이터 출처 표시: 강남 지도는 "© OpenStreetMap contributors"(ODbL, 영상에도 표시), 단속 카메라는 경찰청 「전국무인교통단속카메라표준데이터」(공공데이터포털). 이용 조건 원문은 제출 전에 확인
 - **앱 이름·패키지명** 확정(`com.kyusun.pleos`, 라벨 "Pleos Test" 변경). 첫 release APK 전에 정하고, Pleos·현대차 상표는 쓰지 않습니다.
@@ -475,7 +477,7 @@ bridge.py ─① Virtual Console HTTP (8088) ──→ 차속·기어·페달·�
 
 | 경로 | 내용 |
 |---|---|
-| `app/` | 샘플 앱(운전석 문 상태 읽기), `CameraAccessTest` |
+| `app/` | `MainActivity`(5단계 최소판: 점수·감점 문구 화면), `Voice`(Pleos TTS, 오디오 포커스, 차례로 말하기), `Notice`(화면·음성 문구), `CameraAccessTest` |
 | `app/src/main/.../signal/` | 1단계 신호 수집: `Sample`(불변 샘플, 녹화용 CSV 한 줄), `SignalCollector` |
 | `app/src/main/.../scoring/` | 2단계 판정 엔진: `EventDetector`(급가속, 급감속, 과속, 안전벨트), `RoadTest`(도로주행 채점, 차량 신호 항목), `Turns`(회전 때 방향지시등) |
 | `app/src/test/`, `app/src/androidTest/.../signal/` | `SampleTest`(CSV 형식), `EventDetectorTest`·`RoadTestTest`(8차 CARLA 녹화 포함, `src/test/resources/`, 공용 도구 `TestDrives.kt`), `SignalRecordTest`(신호 흐름을 `cache/signals.csv`로 녹화) |

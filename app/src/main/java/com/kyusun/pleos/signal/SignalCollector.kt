@@ -91,13 +91,26 @@ class SignalCollector(private val context: Context, private val sink: (Sample) -
         runCatching(start).onFailure { Log.e(TAG, "$name: could not start", it) }
     }
 
+    /**
+     * With a lifecycle listener a Car Service restart disconnects and reconnects the car instead of killing the app
+     * (AOSP); each connection subscribes again. The listener and the property events run on [thread].
+     */
     private fun startCarProperties() {
-        val car = Car.createCar(context) ?: error("car service unavailable")
+        val car = Car.createCar(context, handler, Car.CAR_WAIT_TIMEOUT_DO_NOT_WAIT) { car, ready ->
+            when {
+                closed -> Unit
+                ready -> startSource("car properties") { watchCarProperties(car) }
+                else -> Log.w(TAG, "car service disconnected; speed and gear wait for it to come back")
+            }
+        }
         cleanups += { car.disconnect() }
+    }
+
+    private fun watchCarProperties(car: Car) {
         val cpm = car.getCarManager(Car.PROPERTY_SERVICE) as CarPropertyManager
         val subscribedNs = now()
-        // HAL time: these events come through the main looper, whose stalls would bunch receipt times. Speed also
-        // keeps its receipt time, so a recording shows those stalls.
+        // HAL time: receipt times bunch up when [thread] stalls. Speed also keeps its receipt time, so a recording
+        // shows those stalls.
         val callback = object : CarPropertyManager.CarPropertyEventCallback {
             override fun onChangeEvent(v: CarPropertyValue<*>) {
                 if (v.status != CarPropertyValue.STATUS_AVAILABLE) return
