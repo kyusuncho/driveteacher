@@ -13,6 +13,7 @@ No browser tab needed; close the Virtual Console page while bridging so its own 
   ./run.sh --log signals/bridge.csv   # also log every value the consoles accepted (check_signals.sh)
   ./run.sh --driver    # driver.py's careful driver instead of the autopilot, without traffic
   ./run.sh --driver --map gangnam   # on 강남역~역삼역 from OpenStreetMap, with its speed cameras (traffic_info.py)
+  ./run.sh --driver --map gangnam --turns right,left   # turning where it can, with the next turn sent over ③
 """
 import argparse
 import http.client
@@ -32,7 +33,7 @@ import uuid
 
 import carla
 
-from driver import Driver, straightest
+from driver import Driver, leads_on
 from traffic_info import (ROAD_TYPES, Camera, angle_diff, camera_alerts, fill_speed_limits, load_cameras, osm_bounds,
                           road_limits)
 
@@ -318,16 +319,6 @@ class Navigation:
         return min(points, key=lambda t: math.dist(self.locate(t.location), (lat, lon)))
 
 
-def leads_on(wp: carla.Waypoint, meters: float, step: float = 2.0) -> bool:
-    """Whether driving straight on (as driver.py does) from [wp] goes [meters] without the lane running out."""
-    for _ in range(int(meters / step)):
-        options = wp.next(step)
-        if not options:
-            return False
-        wp = straightest(options, wp.transform.rotation.yaw)
-    return True
-
-
 def load_osm_world(client: carla.Client, name: str) -> tuple[carla.World, Navigation]:
     """maps/NAME.osm -> OpenDRIVE (CARLA's converter) -> a generated world, with its roads' limits and cameras.
     The projection is centred on the map so coordinates stay small for Unreal and the OpenDRIVE file keeps a
@@ -464,10 +455,10 @@ def turn_mode(ego: carla.Actor) -> str:
 
 def send(
     tick: int, phase: str, world: carla.World, ego: carla.Actor, console: PleosConsole, emulator: EmulatorConsole,
-    sim: SimChannel, nav: Navigation, recorder: Recorder | None, gear: str | None = None,
+    sim: SimChannel, nav: Navigation, recorder: Recorder | None, driver: Driver | None = None, gear: str | None = None,
 ) -> None:
-    """Mirror the ego state into Pleos (10 Hz controls; 1 Hz GPS, and speed limit and cameras like NaviHelper) and
-    record a frame if asked. [gear]: the driver's (driver.py); without one it follows the phase."""
+    """Mirror the ego state into Pleos (10 Hz controls; 1 Hz GPS, and speed limit, cameras and the driver's next turn
+    like NaviHelper) and record a frame if asked. [gear]: the driver's (driver.py); without one it follows the phase."""
     control = ego.get_control()
     # The traffic manager reports NaN brake while it holds a car at 0 km/h.
     throttle, brake, steer = (0.0 if math.isnan(x) else x for x in (control.throttle, control.brake, control.steer))
@@ -491,9 +482,14 @@ def send(
         sim.send("limit", limit)
         if nav.cameras:
             sim.send("cameras", nav.camera_alerts(ego, lat, lon, speed_kph))
+        next_turn = ""
+        if driver:
+            direction, remain = driver.next_turn()
+            next_turn = f" next={direction},{remain:.1f}"
+            sim.send("nextturn", direction, f"{remain:.1f}")
         print(
             f"{speed_kph:5.1f} km/h  {phase:5s} {gear:7s} thr={throttle:.2f} brk={brake:.2f} "
-            f"steer={steer:+.2f} turn={turn} light={light}  gps=({lat:.5f},{lon:.5f}) limit={limit} "
+            f"steer={steer:+.2f} turn={turn}{next_turn} light={light}  gps=({lat:.5f},{lon:.5f}) limit={limit} "
             f"{nav.road} cameras=[{nav.alerts}]  nearby={close[:3]}"
         )
     if recorder:
@@ -539,7 +535,7 @@ def drive(
             next_tick = max(next_tick + TICK_SECONDS, time.monotonic())
             time.sleep(max(0.0, next_tick - time.monotonic()))
             if tick % SEND_EVERY_TICKS == 0:
-                send(tick, phase, world, ego, console, emulator, sim, nav, recorder, gear)
+                send(tick, phase, world, ego, console, emulator, sim, nav, recorder, driver, gear)
             tick += 1
 
 
@@ -555,6 +551,7 @@ def load_world(client: carla.Client, map_name: str | None) -> tuple[carla.World,
 
 def run(
     seconds: float, dry_run: bool, record_dir: str | None, log_path: str | None, careful: bool, map_name: str | None,
+    turns: list[str], turn_signal: bool,
 ) -> None:
     client = carla.Client(os.environ.get("CARLA_HOST", "localhost"), 2000)
     client.set_timeout(120.0)
@@ -589,7 +586,7 @@ def run(
     tm_port = tm.get_port()
     print(f"spawned ego + {len(actors) - 1} traffic vehicles{' (dry run)' if dry_run else ''}")
     recorder = Recorder(world, emulator, record_dir) if record_dir else None
-    driver = Driver(world, ego, TICK_SECONDS, lambda: nav.limit_kph(ego)) if careful else None
+    driver = Driver(world, ego, TICK_SECONDS, lambda: nav.limit_kph(ego), turns, turn_signal) if careful else None
     if driver:
         phases = [("park", PREROLL_S), ("drive", seconds), ("stop", DRIVER_STOP_S)]
     elif recorder:
@@ -624,9 +621,14 @@ if __name__ == "__main__":
     parser.add_argument("--log", metavar="FILE", help="relative path: CSV of every value the consoles accepted")
     parser.add_argument("--driver", action="store_true", help="drive with driver.py's careful driver, no traffic")
     parser.add_argument("--map", choices=sorted(MAP_STARTS), help="a real-city map from maps/ instead of a town")
+    parser.add_argument("--turns", default="", help="with --driver: turns to make in order, e.g. right,left")
+    parser.add_argument("--no-turn-signal", action="store_true", help="with --driver: forget to signal turns")
     args = parser.parse_args()
+    turns = [t for t in args.turns.split(",") if t]
+    if any(t not in ("left", "right") for t in turns) or ((turns or args.no_turn_signal) and not args.driver):
+        parser.error("--turns takes left/right, and --turns and --no-turn-signal need --driver")
     if args.record and (args.dry_run or os.path.isabs(args.record)):
         parser.error("--record needs the emulator and a path relative to tools/carla")
     if args.log and (args.dry_run or os.path.isabs(args.log)):
         parser.error("--log needs the emulator and a path relative to tools/carla (the container sees only that)")
-    run(args.seconds, args.dry_run, args.record, args.log, args.driver, args.map)
+    run(args.seconds, args.dry_run, args.record, args.log, args.driver, args.map, turns, not args.no_turn_signal)

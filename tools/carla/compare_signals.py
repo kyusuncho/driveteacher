@@ -4,7 +4,7 @@
 
 bridge.csv  `wall_ms,kind,value[,value2]` from `bridge.py --log` (Mac clock, time the write started). `kind?` rows are
             writes that got no answer (the console may or may not hold that value) and possible console resets.
-            belt, limit and cameras went over the simulator channel (③) instead, in the app's own format.
+            belt, limit, cameras and nextturn went over the simulator channel (③) instead, in the app's own format.
 app.csv     `# wall_ms=<ms> t_ms=<ms>` anchor, then `t_ms,kind,value[,value2]` from SignalRecordTest
             (emulator elapsedRealtime: HAL time for speed and gear, callback time for the rest). Speed's value2 is
             the ms from its HAL time to the app's callback (missing in recordings before 10/28 15:00).
@@ -20,7 +20,7 @@ out the same way. A wrong unit never matches at any lag. Console
 outages (no answered write for STALL_MS) are left out the same way: around them writes answered 503 were seen to
 take effect anyway and values to land seconds late, so the bridge log no longer says what the console holds. Per signal, with bridge values mapped to what the app should report:
   explained  each app value was a value the console may have held within WINDOW_MS (wrong unit, sign, mapping)
-  agree      on-change signals (gear/brake/turn, and ③'s belt/limit/cameras): share of the drive the app's current value matches the console's (inverted, stuck or
+  agree      on-change signals (gear/brake/turn, and ③'s belt/limit/cameras/nextturn): share of the drive the app's current value matches the console's (inverted, stuck or
              early-reverted on-change signals, which report right at the bridge's changes and so pass `explained`)
   coverage   each value the bridge changed to shows up in the app, in order, before the bridge changed it again
              (lost updates; also fails on MAX_UNSHOWN_RUN misses in a row: a listener that died); delay is informational
@@ -74,9 +74,10 @@ EXPECT: Dict[str, Callable[[List[str]], List[object]]] = {
     "belt": lambda v: [v[0]],
     "limit": lambda v: [v[0]],
     "cameras": lambda v: [v[0]],
+    "nextturn": lambda v: list(v),
 }
 TOLERANCE = {"speed": 0.05 / 3.6, "steering": 0.5, "loc": 2e-6}
-DISCRETE = {"gear", "brake", "turn", "belt", "limit", "cameras"}
+DISCRETE = {"gear", "brake", "turn", "belt", "limit", "cameras", "nextturn"}
 SIM = "sim"  # bridge.py logs this once when it opens the simulator channel (③); not a signal
 # Signals the app must report right after start (10 Hz speed, or a getter read for the on-change ones).
 FIRST_CHECKED = {"speed", "gear", "brake", "turn", "steering", "belt"}

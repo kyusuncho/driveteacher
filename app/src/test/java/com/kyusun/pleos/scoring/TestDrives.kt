@@ -2,6 +2,7 @@ package com.kyusun.pleos.scoring
 
 import com.kyusun.pleos.signal.GearPosition
 import com.kyusun.pleos.signal.Sample
+import com.kyusun.pleos.signal.TurnSignal
 import com.kyusun.pleos.signal.parseSample
 
 /** Building blocks for test drives. Times are ms from 0; [merge] puts the pieces in time order. */
@@ -25,15 +26,24 @@ internal fun buckled() = belt(true, 0)
 internal fun limit(kph: Int, atMs: Long = 0) = listOf(Sample.SpeedLimit(atMs * NS_PER_MS, kph))
 internal fun gear(position: GearPosition, atMs: Long) = listOf(Sample.Gear(atMs * NS_PER_MS, position))
 internal fun brake(pressed: Boolean, atMs: Long) = listOf(Sample.Brake(atMs * NS_PER_MS, pressed))
+internal fun turn(signal: TurnSignal, atMs: Long) = listOf(Sample.Turn(atMs * NS_PER_MS, signal))
+internal fun nextTurn(signal: TurnSignal, remainM: Float, atMs: Long) =
+    listOf(Sample.NextTurn(atMs * NS_PER_MS, signal, remainM))
 
 /** In time order; at the same time, in the order given. */
 internal fun merge(vararg parts: List<Sample>): List<Sample> = parts.toList().flatten().sortedBy { it.tNs }
 
 /**
- * App recordings (SignalRecordTest) of CARLA drives; limit and belt are unreadable on the emulator.
+ * App recordings (SignalRecordTest) of CARLA drives; limit and belt are unreadable on the emulator itself.
  * - carla-drive-1028.csv: the 8th stage-1 run (10/28 18:50), CARLA autopilot, 98 s.
  * - carla-careful-drive-1028.csv: tools/carla/driver.py (10/28 23:55), 120 s simulated.
  * - carla-careful-drive-1029.csv: the same driver (10/29 05:40), 100 s simulated, filmed with --record.
+ * - carla-pull-out-kept-on-1029.csv: the same driver signalling as it pulls out (10/29 16:58), Gangnam map, 60 s;
+ *   limit and belt came over the simulator channel (③). The signal stayed on through a junction (driver bug).
+ * - carla-careful-drive-gangnam-1029.csv: the same, fixed (10/29 17:09).
+ * - carla-turns-gangnam-1030.csv: the same turning left, then right (--turns left,right), 120 s; the navigation's next
+ *   turn came over ③ too.
+ * - carla-turns-no-signal-gangnam-1030.csv: the same route forgetting the turn signal (--no-turn-signal).
  */
 internal fun recording(name: String): List<Sample> =
     checkNotNull(object {}.javaClass.getResource("/$name")).readText().lines().mapNotNull(::parseSample)

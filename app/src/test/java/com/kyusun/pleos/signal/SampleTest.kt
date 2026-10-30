@@ -20,6 +20,8 @@ class SampleTest {
         Sample.Location(8_000_000, 37.5665, 126.978),
         Sample.SpeedCameras(9_000_000, listOf(camera, school)),
         Sample.SpeedCameras(10_000_000, emptyList()),
+        Sample.NextTurn(11_000_000, TurnSignal.RIGHT, 52.5f),
+        Sample.NextTurn(12_000_000, TurnSignal.OFF, 0f),
     )
 
     @Test
@@ -29,7 +31,7 @@ class SampleTest {
                 "1234,speed,13.5,5", "2,gear,DRIVE", "3,brake,true", "4,turn,LEFT", "5,steering,-90.0", "6,belt,false",
                 "7,limit,50", "8,loc,37.5665,126.978",
                 "9,cameras,6110000-12/SPEED_CAMERA_TRAFFIC_LIGHT/50/230/false;6110000-7/SPEED_CAMERA_SCHOOL_ZONE/30/480/true",
-                "10,cameras,",
+                "10,cameras,", "11,nextturn,RIGHT,52.5", "12,nextturn,OFF,0.0",
             ),
             samples.map { it.toCsv() },
         )
@@ -45,6 +47,7 @@ class SampleTest {
         assertEquals(Sample.SpeedLimit(42, 30), simSample("limit,30", 42))
         assertEquals(Sample.SeatBelt(42, true), simSample("belt,true", 42))
         assertEquals(Sample.SpeedCameras(42, listOf(camera)), simSample("cameras,${camera.toCsv()}", 42))
+        assertEquals(Sample.NextTurn(42, TurnSignal.LEFT, 31.4f), simSample("nextturn,LEFT,31.4", 42))
     }
 
     @Test
@@ -52,6 +55,8 @@ class SampleTest {
         listOf(
             "# wall_ms=1 t_ms=2", "", "7,limit", "7,limit,fast", "x,limit,50", "7,horn,true", "7,gear,SPORT",
             "9,cameras,1/NO_SUCH_TYPE/50/230/false", "9,cameras,1/SPEED_CAMERA_FIX/50",
+            "11,nextturn,LEFT", "11,nextturn,UTURN,30.0", "11,nextturn,LEFT,-5.0", "11,nextturn,LEFT,NaN",
+            "1,speed,NaN,0", "1,speed,Infinity,0",
         ).forEach { assertNull(it, parseSample(it)) }
     }
 }

@@ -3,7 +3,9 @@ package com.kyusun.pleos.signal
 import ai.pleos.playground.location.fused.FusedLocation
 import ai.pleos.playground.location.fused.listener.FusedLocationListener
 import ai.pleos.playground.location.fused.model.LocationData
+import ai.pleos.playground.navi.constants.TurnType
 import ai.pleos.playground.navi.data.CameraAlert
+import ai.pleos.playground.navi.data.TBTInfo
 import ai.pleos.playground.navi.helper.NaviHelper
 import ai.pleos.playground.navi.helper.listener.NaviHelperEventListener
 import ai.pleos.playground.vehicle.Vehicle
@@ -28,9 +30,9 @@ import android.util.Log
 /**
  * Collects the car signals the app scores on into one [Sample] stream:
  * AAOS speed (10 Hz) and gear, Vehicle SDK brake / turn signal / steering / driver seat belt,
- * NaviHelper road speed limit and enforcement cameras, and Pleos FusedLocation.
+ * NaviHelper road speed limit, enforcement cameras and next turn, and Pleos FusedLocation.
  * Debug builds also listen to the simulator channel (③, [openSimChannel]): what it sends replaces the car's signal
- * of the same kind ([Overrides]), for what the emulator cannot fake (seat belt, speed limit, cameras).
+ * of the same kind ([Overrides]), for what the emulator cannot fake (seat belt, speed limit, cameras, next turn).
  *
  * [sink] runs on one background thread, one sample at a time, in arrival order (see [Sample.tNs] for the times).
  * Call [start] once, then [close]; once [close] returns, [sink] is not called again. Do not call [close] from [sink].
@@ -102,7 +104,7 @@ class SignalCollector(private val context: Context, private val sink: (Sample) -
                 val value = v.value
                 val receivedNs = now()
                 when {
-                    v.propertyId == VehiclePropertyIds.PERF_VEHICLE_SPEED && value is Float ->
+                    v.propertyId == VehiclePropertyIds.PERF_VEHICLE_SPEED && value is Float && value.isFinite() ->
                         emit { Sample.Speed(v.timestamp, value, receivedNs) }
                     // The event on registration carries the time of the last change, maybe long ago.
                     v.propertyId == VehiclePropertyIds.GEAR_SELECTION && value is Int ->
@@ -220,6 +222,11 @@ class SignalCollector(private val context: Context, private val sink: (Sample) -
                 val t = now()
                 emit { Sample.SpeedCameras(t, cameraAlerts.mapNotNull(::speedCameraOf)) }
             }
+
+            override fun onTBTInfo(tbtInfos: List<TBTInfo>) {
+                val t = now()
+                emit { nextTurnOf(t, tbtInfos) }
+            }
         }
         cleanups += { navi.release() }
         navi.initialize(
@@ -315,6 +322,22 @@ private fun speedCameraOf(alert: CameraAlert): SpeedCamera? {
     val type = SpeedCameraType.entries.find { it.name == alert.type.name } ?: return null
     val id = alert.id.replace(Regex("[,/;]"), "-")
     return SpeedCamera(id, type, alert.speedLimit, alert.remainDistance, alert.isOverSpeed)
+}
+
+/**
+ * The nearest turn ahead and the signal it calls for: left and right turns, and U-turns (made from the left in Korea).
+ * Forks, exits, roundabouts and the like are not turns the road test judges, so they are passed over. Unit assumed m.
+ */
+internal fun nextTurnOf(tNs: Long, maneuvers: List<TBTInfo>): Sample.NextTurn = maneuvers
+    .filter { it.distance in 0.0..Double.MAX_VALUE }
+    .mapNotNull { m -> signalFor(m.type)?.let { Sample.NextTurn(tNs, it, m.distance.toFloat()) } }
+    .minByOrNull { it.remainM }
+    ?: Sample.NextTurn(tNs, TurnSignal.OFF, 0f)
+
+private fun signalFor(type: TurnType): TurnSignal? = when (type) {
+    TurnType.TURN_LEFT, TurnType.TURN_SHARP_L, TurnType.TURN_UTURN -> TurnSignal.LEFT
+    TurnType.TURN_RIGHT, TurnType.TURN_SHARP_R -> TurnSignal.RIGHT
+    else -> null
 }
 
 /** EVs have P/R/N/D only; manual gears (GEAR_1..) are not expected. */

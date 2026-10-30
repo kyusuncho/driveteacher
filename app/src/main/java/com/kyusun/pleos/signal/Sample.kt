@@ -36,6 +36,12 @@ sealed interface Sample {
 
     /** NaviHelper's enforcement cameras ahead (onCameraAlert), nearest first as given; empty = none ahead. */
     data class SpeedCameras(override val tNs: Long, val cameras: List<SpeedCamera>) : Sample
+
+    /**
+     * The guided route's next turn (NaviHelper onTBTInfo, the nearest entry): the signal it calls for, [TurnSignal.OFF]
+     * for none (straight on, arriving, no route), and the distance to it as the navigation gives it (unit assumed m).
+     */
+    data class NextTurn(override val tNs: Long, val signal: TurnSignal, val remainM: Float) : Sample
 }
 
 enum class GearPosition { PARK, REVERSE, NEUTRAL, DRIVE, UNKNOWN }
@@ -74,6 +80,7 @@ fun Sample.toCsv(): String {
         is Sample.SpeedLimit -> "limit,$kph"
         is Sample.Location -> "loc,$lat,$lon"
         is Sample.SpeedCameras -> "cameras," + cameras.joinToString(";") { it.toCsv() }
+        is Sample.NextTurn -> "nextturn,$signal,$remainM"
     }
     return "${tNs / NANOS_PER_MS},$values"
 }
@@ -92,7 +99,7 @@ fun simSample(line: String, tNs: Long): Sample? = sampleOf(tNs, line.split(","))
 private fun sampleOf(t: Long, fields: List<String>): Sample? = runCatching {
     val v = fields.drop(1)
     when (fields.firstOrNull()) {
-        "speed" -> Sample.Speed(t, v[0].toFloat(), t + (v.getOrNull(1)?.toLong() ?: 0) * NANOS_PER_MS)
+        "speed" -> Sample.Speed(t, v[0].toFloat().also { require(it.isFinite()) }, t + (v.getOrNull(1)?.toLong() ?: 0) * NANOS_PER_MS)
         "gear" -> Sample.Gear(t, GearPosition.valueOf(v[0]))
         "brake" -> Sample.Brake(t, v[0].toBooleanStrict())
         "turn" -> Sample.Turn(t, TurnSignal.valueOf(v[0]))
@@ -101,6 +108,7 @@ private fun sampleOf(t: Long, fields: List<String>): Sample? = runCatching {
         "limit" -> Sample.SpeedLimit(t, v[0].toInt())
         "loc" -> Sample.Location(t, v[0].toDouble(), v[1].toDouble())
         "cameras" -> Sample.SpeedCameras(t, v[0].split(";").filter { it.isNotEmpty() }.map(::cameraOf))
+        "nextturn" -> Sample.NextTurn(t, TurnSignal.valueOf(v[0]), v[1].toFloat().also { require(it in 0f..MAX_M) })
         else -> null
     }
 }.getOrNull()
@@ -111,3 +119,4 @@ private fun cameraOf(csv: String): SpeedCamera {
 }
 
 private const val NANOS_PER_MS = 1_000_000L
+private const val MAX_M = Float.MAX_VALUE // finite, so a NaN or infinite distance is not read

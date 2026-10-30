@@ -68,7 +68,7 @@ data class EventDetector(
         is Sample.SpeedLimit -> copy(limitKph = sample.kph) to emptyList()
         is Sample.SeatBelt -> copy(buckled = sample.buckled, everBuckled = everBuckled || sample.buckled) to emptyList()
         is Sample.Gear, is Sample.Brake, is Sample.Turn, is Sample.Steering, is Sample.Location,
-        is Sample.SpeedCameras -> this to emptyList()
+        is Sample.SpeedCameras, is Sample.NextTurn -> this to emptyList()
     }
 
     private fun onSpeed(s: Sample.Speed): Pair<EventDetector, List<DrivingEvent>> {
