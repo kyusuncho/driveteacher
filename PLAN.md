@@ -409,7 +409,7 @@ bridge.py ─① Virtual Console HTTP (8088) ──→ 차속·기어·페달·�
 - **release APK:** 서명 키는 저장소 밖에 두고(`.gitignore`에 키 파일 패턴 추가), 깨끗한 에뮬레이터에 설치해 확인합니다. 신호 수집 권한은 1단계에서, DO 선언과 TTS 권한은 5단계에서 main 매니페스트로 옮겼습니다. `CAR_SPEED`는 앱이 요청합니다(10/30). `FUSED_LOCATION`은 채점에 쓰지 않아 요청하지 않습니다.
 - **README.md**(필수 4항목), 오픈소스 고지(CARLA 코드 MIT, 에셋 CC-BY 등. 원문 확인 필요), 데모 영상 글꼴을 OFL 글꼴로 교체
 - 지도·데이터 출처 표시: 강남 지도는 "© OpenStreetMap contributors"(ODbL, 영상에도 표시), 단속 카메라는 경찰청 「전국무인교통단속카메라표준데이터」(공공데이터포털). 이용 조건 원문은 제출 전에 확인
-- **앱 이름·패키지명** 확정(`com.kyusun.pleos`, 라벨 "Pleos Test" 변경). 첫 release APK 전에 정하고, Pleos·현대차 상표는 쓰지 않습니다.
+- **앱 이름·패키지명 (11/9 ✅):** 운전선생, `com.kyusun.driveteacher`(소스 패키지도 같은 이름). Pleos·현대차 상표는 쓰지 않습니다.
 - **시연 영상 재녹화:** 지금 영상은 우리 앱이 "주행 중에는 사용할 수 없습니다"로 막힌 장면이라 그대로 내지 않습니다. 감점 문구와 음성이 붙은 뒤 다시 녹화하고, "CARLA 자동 주행 시나리오, 안전벨트·제한속도는 시뮬레이터 값"이라고 자막을 넣습니다.
 - 개인정보처리방침. 위치를 저장한다면 위치정보 이용약관도 필요합니다.
 
@@ -515,8 +515,8 @@ cd tools/carla && docker compose run --rm --no-deps -T client python -m unittest
 
 # 차량 신호 실측 (약 2.5분). 콘솔 주행거리가 1km씩 늘어남(콘솔은 줄일 수 없음)
 ./gradlew :app:installDebug :app:installDebugAndroidTest
-adb shell pm grant --user 10 com.kyusun.pleos android.car.permission.CAR_SPEED
-adb shell am instrument -w -e class com.kyusun.pleos.probe.VehicleSignalProbeTest com.kyusun.pleos.test/androidx.test.runner.AndroidJUnitRunner
+adb shell pm grant --user 10 com.kyusun.driveteacher android.car.permission.CAR_SPEED
+adb shell am instrument -w -e class com.kyusun.driveteacher.probe.VehicleSignalProbeTest com.kyusun.driveteacher.test/androidx.test.runner.AndroidJUnitRunner
 ```
 
 에뮬레이터 콘솔 토큰과 클라이언트 시크릿은 저장소에 넣지 않습니다. 토큰은 `run.sh`가 `~/.emulator_console_auth_token`에서 읽어 환경 변수로 넘깁니다.

@@ -15,7 +15,7 @@
     <uses-permission android:name="pleos.car.permission.FUSED_LOCATION" /> <!-- dangerous: runtime grant -->
     <uses-permission android:name="pleos.car.permission.TTS_SERVICE" /> <!-- Voice: penalties spoken -->
 
-    <application android:label="Pleos Test">
+    <application android:label="운전선생">
         <!-- Kept on screen while driving (distractionOptimized; a real car needs Pleos App Market approval for it).
              Handles configuration changes itself: recreating it would restart the road test mid-drive.
              ponytail: views are built in code and do not follow a day/night switch until the next launch. -->

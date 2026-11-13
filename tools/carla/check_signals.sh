@@ -7,7 +7,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 DRIVE_S="${1:-60}"
-PKG=com.kyusun.pleos
+PKG=com.kyusun.driveteacher
 app_shell() { adb shell run-as "$PKG" --user 10 "$@"; }
 
 mkdir -p signals

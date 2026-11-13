@@ -33,7 +33,7 @@
         <activity
             android:name=".probe.DoProbeActivity"
             android:exported="false"
-            android:taskAffinity="com.kyusun.pleos.probe">
+            android:taskAffinity="com.kyusun.driveteacher.probe">
             <meta-data android:name="distractionOptimized" android:value="true" />
         </activity>
     </application>

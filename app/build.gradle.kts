@@ -4,12 +4,12 @@ plugins {
 }
 
 android {
-    namespace = "com.kyusun.pleos"
+    namespace = "com.kyusun.driveteacher"
     compileSdk = 34
     useLibrary("android.car") // CarPropertyManager / CarUxRestrictionsManager (on BOOTCLASSPATH at runtime)
 
     defaultConfig {
-        applicationId = "com.kyusun.pleos"
+        applicationId = "com.kyusun.driveteacher"
         minSdk = 28 // Pleos requirement (signing key rotation)
         targetSdk = 34
         versionCode = 1
