@@ -281,7 +281,7 @@ data class RoadTest(
         }
     }
 
-    private companion object {
+    internal companion object {
         const val FULL_MARKS = 100
         const val PASS_MARK = 70
         const val DISQUALIFYING_MARGIN_KPH = 10f

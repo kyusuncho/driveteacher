@@ -5,6 +5,7 @@ import com.kyusun.driveteacher.scoring.Penalty
 import com.kyusun.driveteacher.scoring.RoadItem
 import com.kyusun.driveteacher.scoring.RoadTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NoticeTest {
@@ -13,20 +14,38 @@ class NoticeTest {
     private val speeding = Penalty.Disqualified(3, Disqualification.SPEEDING)
 
     @Test
-    fun `headline is the score, failing below 70, or the disqualification`() {
-        assertEquals("100점", headlineOf(RoadTest()))
-        assertEquals("86점", headlineOf(RoadTest(listOf(noSignal, hardBrake))))
-        val fiveBrakes = List(5) { hardBrake }
-        assertEquals("65점 · 불합격", headlineOf(RoadTest(fiveBrakes)))
-        assertEquals("실격", headlineOf(RoadTest(listOf(noSignal, speeding))))
+    fun `pull-out items carry their section, the rest the annex label as is`() {
+        assertEquals("출발 신호 안함", nameOf(RoadItem.START_NO_SIGNAL))
+        assertEquals("출발 신호 계속", nameOf(RoadItem.START_SIGNAL_KEPT_ON))
+        assertEquals("진로변경 신호 불이행", nameOf(RoadItem.TURN_NO_SIGNAL))
+        assertEquals("출발 신호 안함, 5점 감점되었습니다.", speechOf(listOf(Penalty.Deduction(0, RoadItem.START_NO_SIGNAL))))
     }
 
     @Test
-    fun `a line says what happened and what it cost`() {
-        assertEquals("진로변경 신호 불이행 −7점", lineOf(noSignal))
-        assertEquals("제한속도 시속 10km 초과 · 실격", lineOf(speeding))
-        assertEquals("감점 없음", historyOf(emptyList()))
-        assertEquals("진로변경 신호 불이행 −7점\n급브레이크 사용 −7점", historyOf(listOf(noSignal, hardBrake)))
+    fun `every item and disqualification has a reason`() {
+        val all = RoadItem.entries.map { Penalty.Deduction(0, it) } + Disqualification.entries.map { Penalty.Disqualified(0, it) }
+        all.forEach { assertTrue("no reason for $it", reasonOf(it).endsWith("요.")) }
+        assertEquals(all.size, all.map(::reasonOf).toSet().size)
+    }
+
+    @Test
+    fun `the result lists what the car could not give`() {
+        assertEquals(listOf("좌석안전띠", "제한속도", "회전 신호 30~33"), unjudgedOf(Coverage()).map { it.first })
+        assertEquals(emptyList<Pair<String, String>>(), unjudgedOf(Coverage(true, true, true)))
+    }
+
+    @Test
+    fun `the clock reads minutes and seconds, hours past an hour`() {
+        assertEquals("0:00", clockOf(0))
+        assertEquals("4:07", clockOf(247_900_000_000))
+        assertEquals("1:02:07", clockOf(3_727_000_000_000))
+    }
+
+    @Test
+    fun `ending the test says the verdict`() {
+        assertEquals("시험을 마쳤습니다. 86점, 합격입니다.", endSpeechOf(RoadTest(listOf(noSignal, hardBrake))))
+        assertEquals("시험을 마쳤습니다. 실격입니다.", endSpeechOf(RoadTest(listOf(speeding))))
+        assertEquals("시험을 마쳤습니다. 65점, 불합격입니다.", endSpeechOf(RoadTest(List(5) { hardBrake })))
     }
 
     @Test

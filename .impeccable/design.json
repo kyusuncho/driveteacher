@@ -1,0 +1,711 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-08T16:17:03.747781+00:00",
+  "title": "Design System: 운전선생",
+  "extensions": {
+    "colorMeta": {
+      "concrete": {
+        "role": "neutral",
+        "displayName": "Concrete",
+        "canonical": "#E4E6E2",
+        "tonalRamp": [
+          "#262923",
+          "#43483E",
+          "#616859",
+          "#7E8774",
+          "#9BA293",
+          "#B8BDB3",
+          "#D5D8D2",
+          "#F2F3F1"
+        ]
+      },
+      "concrete-ink": {
+        "role": "neutral",
+        "displayName": "Concrete Ink",
+        "canonical": "#15191A",
+        "tonalRamp": [
+          "#22292A",
+          "#3C484B",
+          "#56676B",
+          "#70868B",
+          "#90A1A5",
+          "#B0BCC0",
+          "#D1D8DA",
+          "#F1F3F4"
+        ]
+      },
+      "concrete-ink-muted": {
+        "role": "neutral",
+        "displayName": "Concrete Ink Muted",
+        "canonical": "#4A524F",
+        "tonalRamp": [
+          "#242827",
+          "#404744",
+          "#5C6562",
+          "#77847F",
+          "#96A09C",
+          "#B4BCB9",
+          "#D3D7D6",
+          "#F2F3F2"
+        ]
+      },
+      "asphalt": {
+        "role": "neutral",
+        "displayName": "Asphalt",
+        "canonical": "#101312",
+        "tonalRamp": [
+          "#232A27",
+          "#3E4945",
+          "#586963",
+          "#738881",
+          "#92A39E",
+          "#B2BEBA",
+          "#D2D9D6",
+          "#F1F3F3"
+        ]
+      },
+      "asphalt-ink": {
+        "role": "neutral",
+        "displayName": "Asphalt Ink",
+        "canonical": "#E3E7E4",
+        "tonalRamp": [
+          "#232925",
+          "#3E4941",
+          "#59685D",
+          "#748779",
+          "#93A397",
+          "#B2BDB5",
+          "#D2D8D3",
+          "#F1F3F2"
+        ]
+      },
+      "asphalt-ink-muted": {
+        "role": "neutral",
+        "displayName": "Asphalt Ink Muted",
+        "canonical": "#9BA49F",
+        "tonalRamp": [
+          "#242826",
+          "#404743",
+          "#5C6560",
+          "#78847D",
+          "#96A09A",
+          "#B5BBB8",
+          "#D3D7D5",
+          "#F2F3F2"
+        ]
+      },
+      "road": {
+        "role": "neutral",
+        "displayName": "Road",
+        "canonical": "#2B2F2F",
+        "tonalRamp": [
+          "#252828",
+          "#404646",
+          "#5C6565",
+          "#788383",
+          "#969F9F",
+          "#B5BBBB",
+          "#D3D7D7",
+          "#F2F3F3"
+        ]
+      },
+      "road-night": {
+        "role": "neutral",
+        "displayName": "Road Night",
+        "canonical": "#1B1E1E",
+        "tonalRamp": [
+          "#242828",
+          "#404747",
+          "#5B6666",
+          "#778484",
+          "#96A0A0",
+          "#B4BCBC",
+          "#D3D7D7",
+          "#F2F3F3"
+        ]
+      },
+      "road-paint": {
+        "role": "neutral",
+        "displayName": "Road Paint",
+        "canonical": "#F2F2EE",
+        "tonalRamp": [
+          "#2B2B21",
+          "#4C4C3A",
+          "#6D6D54",
+          "#8E8E6D",
+          "#A8A88D",
+          "#C1C1AE",
+          "#DBDBD0",
+          "#F4F4F1"
+        ]
+      },
+      "road-paint-night": {
+        "role": "neutral",
+        "displayName": "Road Paint Night",
+        "canonical": "#B9BDB8",
+        "tonalRamp": [
+          "#252825",
+          "#424641",
+          "#5E645D",
+          "#7B8279",
+          "#999E97",
+          "#B6BBB5",
+          "#D4D7D4",
+          "#F2F3F2"
+        ]
+      },
+      "gantry-steel": {
+        "role": "neutral",
+        "displayName": "Gantry Steel",
+        "canonical": "#6E7673",
+        "tonalRamp": [
+          "#252827",
+          "#414644",
+          "#5D6461",
+          "#79827F",
+          "#979E9C",
+          "#B5BAB9",
+          "#D4D7D5",
+          "#F2F3F2"
+        ]
+      },
+      "gantry-steel-night": {
+        "role": "neutral",
+        "displayName": "Gantry Steel Night",
+        "canonical": "#3A403E",
+        "tonalRamp": [
+          "#242827",
+          "#404744",
+          "#5C6562",
+          "#778480",
+          "#96A09C",
+          "#B4BBB9",
+          "#D3D7D6",
+          "#F2F3F2"
+        ]
+      },
+      "guide-green": {
+        "role": "primary",
+        "displayName": "Guide Green",
+        "canonical": "#0B6B47",
+        "tonalRamp": [
+          "#07452E",
+          "#0D7A51",
+          "#12AF74",
+          "#17E497",
+          "#49ECAF",
+          "#7EF2C6",
+          "#B3F7DE",
+          "#E8FDF5"
+        ]
+      },
+      "guide-green-night": {
+        "role": "primary",
+        "displayName": "Guide Green Night",
+        "canonical": "#075438",
+        "tonalRamp": [
+          "#06472F",
+          "#0A7C53",
+          "#0FB277",
+          "#13E89B",
+          "#46F0B2",
+          "#7CF4C8",
+          "#B2F9DF",
+          "#E7FDF5"
+        ]
+      },
+      "route-blue": {
+        "role": "primary",
+        "displayName": "Route Blue",
+        "canonical": "#0A4FA0",
+        "tonalRamp": [
+          "#042448",
+          "#083F7F",
+          "#0B5AB6",
+          "#0F75ED",
+          "#4294F3",
+          "#79B3F7",
+          "#B0D2FA",
+          "#E7F1FE"
+        ]
+      },
+      "route-blue-night": {
+        "role": "primary",
+        "displayName": "Route Blue Night",
+        "canonical": "#093E7E",
+        "tonalRamp": [
+          "#052347",
+          "#093E7E",
+          "#0D59B4",
+          "#1173EB",
+          "#4493F2",
+          "#7AB2F6",
+          "#B1D2F9",
+          "#E7F1FD"
+        ]
+      },
+      "sign-white": {
+        "role": "neutral",
+        "displayName": "Sign White",
+        "canonical": "#FFFFFF",
+        "tonalRamp": [
+          "#262626",
+          "#434343",
+          "#616161",
+          "#7E7E7E",
+          "#9B9B9B",
+          "#B8B8B8",
+          "#D5D5D5",
+          "#F2F2F2"
+        ]
+      },
+      "sign-white-night": {
+        "role": "neutral",
+        "displayName": "Sign White Night",
+        "canonical": "#E8ECE9",
+        "tonalRamp": [
+          "#232A24",
+          "#3D4A40",
+          "#576A5C",
+          "#728A78",
+          "#91A496",
+          "#B1BFB5",
+          "#D1D9D3",
+          "#F1F3F2"
+        ]
+      },
+      "sign-white-muted": {
+        "role": "neutral",
+        "displayName": "Sign White Muted",
+        "canonical": "#FFFFFFC8",
+        "tonalRamp": [
+          "#262626",
+          "#434343",
+          "#616161",
+          "#7E7E7E",
+          "#9B9B9B",
+          "#B8B8B8",
+          "#D5D5D5",
+          "#F2F2F2"
+        ]
+      },
+      "sign-white-muted-night": {
+        "role": "neutral",
+        "displayName": "Sign White Muted Night",
+        "canonical": "#E8ECE9B8",
+        "tonalRamp": [
+          "#232A24",
+          "#3D4A40",
+          "#576A5C",
+          "#728A78",
+          "#91A496",
+          "#B1BFB5",
+          "#D1D9D3",
+          "#F1F3F2"
+        ]
+      },
+      "plate-white": {
+        "role": "neutral",
+        "displayName": "Plate White",
+        "canonical": "#FFFFFF",
+        "tonalRamp": [
+          "#262626",
+          "#434343",
+          "#616161",
+          "#7E7E7E",
+          "#9B9B9B",
+          "#B8B8B8",
+          "#D5D5D5",
+          "#F2F2F2"
+        ]
+      },
+      "plate-white-night": {
+        "role": "neutral",
+        "displayName": "Plate White Night",
+        "canonical": "#D9DDD9",
+        "tonalRamp": [
+          "#242824",
+          "#404740",
+          "#5B665B",
+          "#778577",
+          "#95A095",
+          "#B4BCB4",
+          "#D3D7D3",
+          "#F2F3F2"
+        ]
+      },
+      "plate-ink": {
+        "role": "neutral",
+        "displayName": "Plate Ink",
+        "canonical": "#121414",
+        "tonalRamp": [
+          "#242828",
+          "#404747",
+          "#5B6666",
+          "#778484",
+          "#96A0A0",
+          "#B4BCBC",
+          "#D3D7D7",
+          "#F2F3F3"
+        ]
+      },
+      "plate-ink-night": {
+        "role": "neutral",
+        "displayName": "Plate Ink Night",
+        "canonical": "#101212",
+        "tonalRamp": [
+          "#242828",
+          "#3F4747",
+          "#5B6666",
+          "#768585",
+          "#95A1A1",
+          "#B4BCBC",
+          "#D3D8D8",
+          "#F2F3F3"
+        ]
+      },
+      "caution-yellow": {
+        "role": "secondary",
+        "displayName": "Caution Yellow",
+        "canonical": "#F6C200",
+        "tonalRamp": [
+          "#4C3C00",
+          "#876A00",
+          "#C19800",
+          "#FBC600",
+          "#FFD537",
+          "#FFE171",
+          "#FFEDAB",
+          "#FFFAE6"
+        ]
+      },
+      "caution-yellow-night": {
+        "role": "secondary",
+        "displayName": "Caution Yellow Night",
+        "canonical": "#D8AA00",
+        "tonalRamp": [
+          "#4C3C00",
+          "#876A00",
+          "#C19800",
+          "#FBC600",
+          "#FFD437",
+          "#FFE171",
+          "#FFEDAB",
+          "#FFFAE6"
+        ]
+      },
+      "prohibition-red": {
+        "role": "secondary",
+        "displayName": "Prohibition Red",
+        "canonical": "#D2232A",
+        "tonalRamp": [
+          "#420B0D",
+          "#741317",
+          "#A51C21",
+          "#D7242B",
+          "#E25359",
+          "#EB8589",
+          "#F3B7BA",
+          "#FBE9EA"
+        ]
+      },
+      "prohibition-red-night": {
+        "role": "secondary",
+        "displayName": "Prohibition Red Night",
+        "canonical": "#C2262C",
+        "tonalRamp": [
+          "#400D0F",
+          "#71161A",
+          "#A12025",
+          "#D22930",
+          "#DE575D",
+          "#E8888C",
+          "#F1B9BB",
+          "#FBEAEA"
+        ]
+      },
+      "work-orange": {
+        "role": "tertiary",
+        "displayName": "Work Orange",
+        "canonical": "#F08C00",
+        "tonalRamp": [
+          "#4C2D00",
+          "#874F00",
+          "#C17100",
+          "#FB9300",
+          "#FFAC37",
+          "#FFC471",
+          "#FFDCAB",
+          "#FFF4E6"
+        ]
+      },
+      "work-orange-night": {
+        "role": "tertiary",
+        "displayName": "Work Orange Night",
+        "canonical": "#CF7A00",
+        "tonalRamp": [
+          "#4C2D00",
+          "#874F00",
+          "#C17200",
+          "#FB9400",
+          "#FFAD37",
+          "#FFC571",
+          "#FFDDAB",
+          "#FFF5E6"
+        ]
+      },
+      "caution-panel-night": {
+        "role": "secondary",
+        "displayName": "Caution Panel Night",
+        "canonical": "#231D06",
+        "tonalRamp": [
+          "#41360B",
+          "#735F14",
+          "#A5891C",
+          "#D7B225",
+          "#E2C454",
+          "#EAD586",
+          "#F3E6B7",
+          "#FBF8E9"
+        ]
+      },
+      "caution-panel-ink-night": {
+        "role": "secondary",
+        "displayName": "Caution Panel Ink Night",
+        "canonical": "#EACB5A",
+        "tonalRamp": [
+          "#443709",
+          "#78610F",
+          "#AB8B16",
+          "#DFB51C",
+          "#E8C74D",
+          "#EFD781",
+          "#F6E8B5",
+          "#FCF8E8"
+        ]
+      },
+      "prohibition-panel-night": {
+        "role": "secondary",
+        "displayName": "Prohibition Panel Night",
+        "canonical": "#240D0E",
+        "tonalRamp": [
+          "#381416",
+          "#632427",
+          "#8E3337",
+          "#B94348",
+          "#CA6C70",
+          "#D9979A",
+          "#E9C1C3",
+          "#F8ECED"
+        ]
+      },
+      "prohibition-panel-ink-night": {
+        "role": "secondary",
+        "displayName": "Prohibition Panel Ink Night",
+        "canonical": "#ECE4E3",
+        "tonalRamp": [
+          "#2E211F",
+          "#503936",
+          "#73524E",
+          "#966B66",
+          "#AE8C88",
+          "#C6ADAA",
+          "#DDCFCD",
+          "#F5F0F0"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Score",
+        "purpose": "The score numeral, autosized to fill its box."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Verdict word, sign titles."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Destinations, section heads, costs."
+      },
+      "line": {
+        "displayName": "Line",
+        "purpose": "Buttons, penalty names."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "The teacher's reasons, subtitles."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Plates and fact names; the 24sp floor."
+      },
+      "figure": {
+        "displayName": "Figure",
+        "purpose": "Number plates and fact values."
+      },
+      "figure-light": {
+        "displayName": "Figure Light",
+        "purpose": "Elapsed-time column."
+      }
+    },
+    "shadows": [],
+    "motion": [
+      {
+        "name": "verdict-hang",
+        "value": "420ms cubic-bezier(0.16, 1, 0.3, 1); translateY -40dp to 0, opacity 0 to 1",
+        "purpose": "The result's verdict sign dropping into place. Parked only; the only authored motion."
+      }
+    ],
+    "touch": [
+      {
+        "name": "ripple",
+        "value": "#FFFFFF40 day, #FFFFFF33 night",
+        "purpose": "Press feedback clipped to the face."
+      },
+      {
+        "name": "focus-ring",
+        "value": "6dp stroke, caution-yellow",
+        "purpose": "Rotary controller focus."
+      }
+    ],
+    "breakpoints": []
+  },
+  "components": [
+    {
+      "name": "Guide Sign",
+      "kind": "card",
+      "refersTo": "sign-guide",
+      "description": "The score while it passes; the road-test destination on home.",
+      "html": "<div class=\"ds-sign-guide\"><div class=\"ds-t\">합격</div><div class=\"ds-n\">81<span>점</span></div></div>",
+      "css": ".ds-sign-guide { background: #0B6B47; border-radius: 22px; padding: 40px; color: #FFFFFF; position: relative; font-family: 'Gothic A1', sans-serif; } .ds-sign-guide::after { content: ''; position: absolute; inset: 9px; border-radius: 13px; border: 4px solid #FFFFFF; pointer-events: none; } .ds-sign-guide .ds-t { font-size: 56px; font-weight: 800; } .ds-sign-guide .ds-n { font-family: Overpass, 'Gothic A1', sans-serif; font-variant-numeric: tabular-nums; font-weight: 800; font-size: 160px; letter-spacing: -0.04em; line-height: 1; } .ds-sign-guide .ds-n span { font-family: 'Gothic A1', sans-serif; font-size: 44px; }"
+    },
+    {
+      "name": "Caution Sign (night)",
+      "kind": "card",
+      "refersTo": "sign-caution-night",
+      "description": "Below the pass mark by night: dark panel, yellow line and ink, never a bright fill.",
+      "html": "<div class=\"ds-sign-caution\"><svg width=\"48\" height=\"42\" viewBox=\"0 0 48 42\"><path d=\"M24 0 L48 42 L0 42 Z\" fill=\"#C2262C\"/><path d=\"M24 9 L42 39 L6 39 Z\" fill=\"#D8AA00\"/><rect x=\"22\" y=\"16\" width=\"4\" height=\"13\" rx=\"2\" fill=\"#101212\"/><circle cx=\"24\" cy=\"33\" r=\"2.4\" fill=\"#101212\"/></svg><span>합격선 70점 미만</span><div class=\"ds-n\">39<span>점</span></div></div>",
+      "css": ".ds-sign-caution { background: #231D06; border-radius: 22px; padding: 40px; color: #FFFFFF; position: relative; font-family: 'Gothic A1', sans-serif; color: #EACB5A; } .ds-sign-caution::after { content: ''; position: absolute; inset: 9px; border-radius: 13px; border: 4px solid #D8AA00; pointer-events: none; } .ds-sign-caution > span { font-size: 44px; font-weight: 800; margin-left: 16px; } .ds-sign-caution .ds-n { font-family: Overpass, 'Gothic A1', sans-serif; font-variant-numeric: tabular-nums; font-weight: 800; font-size: 160px; letter-spacing: -0.04em; line-height: 1; } .ds-sign-caution .ds-n span { font-family: 'Gothic A1', sans-serif; font-size: 44px; }"
+    },
+    {
+      "name": "Prohibition Sign",
+      "kind": "card",
+      "refersTo": "sign-prohibition",
+      "description": "Disqualified: a blank red ring where the score was, no number.",
+      "html": "<div class=\"ds-sign-out\"><div class=\"ds-ring\"></div><div class=\"ds-t\">실격</div></div>",
+      "css": ".ds-sign-out { background: #FFFFFF; border-radius: 22px; padding: 40px; color: #FFFFFF; position: relative; font-family: 'Gothic A1', sans-serif; color: #121414; display: flex; gap: 40px; align-items: center; } .ds-sign-out::after { content: ''; position: absolute; inset: 9px; border-radius: 13px; border: 4px solid #D2232A; pointer-events: none; } .ds-sign-out .ds-ring { width: 200px; height: 200px; border-radius: 50%; border: 20px solid #D2232A; } .ds-sign-out .ds-t { font-size: 72px; font-weight: 800; }"
+    },
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Route-blue plate button: 다시 시험, 시험 끝내기, 권한 요청.",
+      "html": "<button class=\"ds-btn-primary\">다시 시험</button>",
+      "css": ".ds-btn-primary { background: #0A4FA0; color: #FFFFFF; font-family: 'Gothic A1', sans-serif; font-size: 32px; font-weight: 800; min-height: 96px; padding: 16px 40px; border: none; border-radius: 14px; } .ds-btn-primary:active { background-image: linear-gradient(rgba(255,255,255,.25), rgba(255,255,255,.25)); } .ds-btn-primary:focus-visible { outline: 6px solid #F6C200; outline-offset: 0; }"
+    },
+    {
+      "name": "Ground Button",
+      "kind": "button",
+      "refersTo": "button-ground",
+      "description": "The 홈 button: ground colour with a muted edge.",
+      "html": "<button class=\"ds-btn-ground\">홈</button>",
+      "css": ".ds-btn-ground { background: #E4E6E2; color: #15191A; font-family: 'Gothic A1', sans-serif; font-size: 32px; font-weight: 800; min-height: 96px; padding: 16px 40px; border: 3px solid #4A524F; border-radius: 14px; } .ds-btn-ground:active { background-image: linear-gradient(rgba(255,255,255,.25), rgba(255,255,255,.25)); } .ds-btn-ground:focus-visible { outline: 6px solid #F6C200; outline-offset: 0; }"
+    },
+    {
+      "name": "Auxiliary Plate",
+      "kind": "chip",
+      "refersTo": "plate-auxiliary",
+      "description": "보조표지: notes, the last result, the simulator disclosure.",
+      "html": "<span class=\"ds-plate\">개발용 빌드</span>",
+      "css": ".ds-plate { display: inline-block; background: #FFFFFF; color: #121414; font-family: 'Gothic A1', sans-serif; font-size: 24px; font-weight: 700; padding: 10px 16px; border-radius: 10px; border: 2px solid #4A524F; }"
+    },
+    {
+      "name": "Work-Zone Plate",
+      "kind": "chip",
+      "refersTo": "plate-work",
+      "description": "준비 중 / 채점 안 함 only.",
+      "html": "<span class=\"ds-plate-work\">준비 중</span>",
+      "css": ".ds-plate-work { display: inline-block; background: #F08C00; color: #121414; font-family: 'Gothic A1', sans-serif; font-size: 24px; font-weight: 700; padding: 10px 16px; border-radius: 10px; }"
+    },
+    {
+      "name": "Penalty Row",
+      "kind": "custom",
+      "refersTo": "number-plate",
+      "description": "A destination row on the blue result sign: time, number plate, name and reason, cost.",
+      "html": "<div class=\"ds-row\"><span class=\"ds-time\">0:03</span><span class=\"ds-num\">9</span><div class=\"ds-words\"><b>급조작 · 급출발</b><small>출발하면서 1초에 시속 9.7km 넘게 빨라졌어요. 급출발로 봐요.</small></div><span class=\"ds-cost\">−7</span></div>",
+      "css": ".ds-row { background: #0A4FA0; color: #FFFFFF; font-family: 'Gothic A1', sans-serif; display: flex; gap: 24px; align-items: flex-start; padding: 24px; } .ds-time { font-family: Overpass, 'Gothic A1', sans-serif; font-variant-numeric: tabular-nums; font-weight: 600; font-size: 24px; color: rgba(255,255,255,.78); min-width: 88px; } .ds-num { font-family: Overpass, 'Gothic A1', sans-serif; font-variant-numeric: tabular-nums; background: #FFFFFF; color: #121414; font-weight: 800; font-size: 32px; padding: 6px 10px 4px; border-radius: 10px; min-width: 67px; text-align: center; } .ds-words { flex: 1; display: flex; flex-direction: column; gap: 8px; } .ds-words b { font-size: 32px; font-weight: 800; } .ds-words small { font-size: 26px; font-weight: 500; color: rgba(255,255,255,.78); } .ds-cost { font-family: Overpass, 'Gothic A1', sans-serif; font-variant-numeric: tabular-nums; font-weight: 800; font-size: 44px; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Road Sign",
+    "overview": "**Creative North Star: \"The Road Sign\"**\n\nEvery screen is a Korean road sign, the kind built to be read at speed: a flat coloured panel with a white line inset from its edge, big heavy Hangul, numerals in a highway face, small white plates for numbers and footnotes. The score is written on a sign the way a distance is. There is no dashboard chrome, no gauge, no card list; the screen is a ground (concrete by day, asphalt by night) with one to three signs standing on it.\n\nThe sign's *kind* is the state. A green guide sign means the score is passing; a yellow caution sign means it has fallen below the pass mark; a white prohibition disc in a red ring means the test is over. Blue route signs carry lists and other destinations. An orange work-zone plate marks what is not built or not judged. The colours are not decoration: each one says exactly one thing, and it says the same thing on every screen.\n\nThe density is set by the head unit and the driver. Body text is never below 24sp, touch targets are 96dp, and the driving screen is one sign filling the window, static. Night keeps the sign colours, dimmed, and never floods the cabin with a bright fill.",
+    "keyCharacteristics": [
+      "Flat sign panels with a 4dp line inset 9dp from the edge; no shadows anywhere.",
+      "Sign kind encodes state: guide green, caution yellow, prohibition ring, route blue, work orange.",
+      "Overpass numerals (tabular, heavy) with Gothic A1 Hangul; units fall back to Gothic A1.",
+      "Day on concrete, night on asphalt; the same signs, dimmed.",
+      "One authored motion in the whole app, and never while driving."
+    ],
+    "rules": [
+      {
+        "name": "The Sign Kind Rule",
+        "body": "The score's sign kind carries its state: guide green while passing, caution below 70, prohibition when disqualified. Never show a failing score on green or a passing one on yellow.",
+        "section": "colors"
+      },
+      {
+        "name": "The Work-Zone Rule",
+        "body": "Orange means only 준비 중 or 채점 안 함. Any other disclosure, including the simulator disclosure (개발용 빌드 / 시뮬레이터 값), sits on the white 보조표지 plate.",
+        "section": "colors"
+      },
+      {
+        "name": "The Dark Panel Rule",
+        "body": "By night the caution and prohibition states use a dark panel with a coloured inset line and coloured ink, never a bright full-screen yellow or white fill.",
+        "section": "colors"
+      },
+      {
+        "name": "The Fallback Rule",
+        "body": "Numerals are set in Overpass; the Hangul units beside them (점, 건) fall back to Gothic A1 through a custom fallback family, never to the system font.",
+        "section": "typography"
+      },
+      {
+        "name": "The Font Padding Rule",
+        "body": "Hangul text keeps font padding, because Gothic A1's ㅂ posts rise past the ascent (불 clips to 물 without it). Numerals drop font padding so they sit tight in their box.",
+        "section": "typography"
+      },
+      {
+        "name": "The 24sp Floor Rule",
+        "body": "No text below 24sp (Label). AAOS body text is never smaller.",
+        "section": "typography"
+      },
+      {
+        "name": "The One Sign While Driving Rule",
+        "body": "While driving, the screen is a single sign: the score and the last penalty, nothing else.",
+        "section": "layout"
+      },
+      {
+        "name": "The Flat Panel Rule",
+        "body": "Signs are painted metal: flat colour and an inset line. Never add a drop shadow or gradient to make one lift.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do put the score on the sign whose kind matches its state: guide green at 70 or above, caution below 70, prohibition when disqualified.",
+      "Do carry every disclosure that is not 준비 중 / 채점 안 함 on the white 보조표지 plate, including the simulator disclosure.",
+      "Do use a dark panel with a coloured inset line for caution and prohibition by night.",
+      "Do set numerals in Overpass with tabular figures and let Hangul units fall back to Gothic A1.",
+      "Do keep font padding on Hangul text and drop it on numerals.",
+      "Do keep text at 24sp or larger and touch targets at 96dp.",
+      "Do draw symbols as paths in sign colours, from the caution triangle, prohibition ring, ahead disc, and the one arrow."
+    ],
+    "donts": [
+      "Don't animate anything on the driving screen. The verdict sign's 420ms drop on the parked result is the only motion.",
+      "Don't use orange for anything but 준비 중 and 채점 안 함.",
+      "Don't fill the night screen with bright yellow or white for a failing or disqualified state.",
+      "Don't show a number on the disqualified sign; the blank ring replaces it.",
+      "Don't add shadows, gradients, or gauge-style circular scores; the score is a sign, not a dial.",
+      "Don't mute sign ink to a grey; muted ink is the sign's white made translucent over its own colour.",
+      "Don't render any glyph in the system font; both faces are bundled."
+    ]
+  }
+}

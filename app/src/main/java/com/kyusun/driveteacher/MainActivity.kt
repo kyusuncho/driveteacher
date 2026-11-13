@@ -4,62 +4,74 @@ import android.app.Activity
 import android.car.Car
 import android.car.drivingstate.CarUxRestrictions
 import android.car.drivingstate.CarUxRestrictionsManager
+import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
-import android.graphics.Color
+import android.content.res.Configuration
 import android.os.Bundle
 import android.util.Log
-import android.view.Gravity
-import android.view.View
-import android.widget.LinearLayout
-import android.widget.ScrollView
-import android.widget.TextView
 import com.kyusun.driveteacher.scoring.Penalty
-import com.kyusun.driveteacher.scoring.RoadTest
 import com.kyusun.driveteacher.signal.SignalCollector
+import com.kyusun.driveteacher.ui.Actions
+import com.kyusun.driveteacher.ui.Faces
+import com.kyusun.driveteacher.ui.Palette
+import com.kyusun.driveteacher.ui.Stage
+import com.kyusun.driveteacher.ui.Ui
+import com.kyusun.driveteacher.ui.UiState
+import com.kyusun.driveteacher.ui.driveScreen
+import com.kyusun.driveteacher.ui.homeScreen
+import com.kyusun.driveteacher.ui.resultScreen
+import com.kyusun.driveteacher.ui.startScreen
 
 /**
- * The road test while it is driven (PLAN 5단계, minimum): the score and the last penalty in one line, each penalty
- * spoken. Parked (no UX restrictions) the line gives way to every penalty so far. One test per launch.
- * ponytail: scoring lives in this activity, so it ends when the activity is destroyed (Back); a foreground service
- * would keep it alive behind the navigation app.
+ * Home → start → the road test → its result (PLAN 5단계). A test starts parked; while driving (UX restrictions) the
+ * screen is one sign with the score and the last penalty, each penalty also spoken. Parked again, the driver ends the
+ * test and reads why each point was lost.
+ * ponytail: scoring lives in this activity, so it ends when the activity is destroyed; Back during a test only moves
+ * the app behind (the test goes on). A foreground service would keep it alive past a process kill.
  */
-class MainActivity : Activity() {
-    private lateinit var headline: TextView
-    private lateinit var notice: TextView
-    private lateinit var history: ScrollView
-    private lateinit var historyText: TextView
+class MainActivity : Activity(), Actions {
+    private lateinit var faces: Faces
     private lateinit var voice: Voice
     private lateinit var car: Car
     private var collector: SignalCollector? = null
-    private var shown = RoadTest()
-    private var driving = true // until the restrictions are read: the driving screen is the safe one
-    private var unscored: String? = null // why nothing is scored, if so
+    private var run = 0 // the test the collector's posts belong to
+    private var state = UiState()
+    private var revealResult = false
 
-    // Only touched on the collector's thread.
-    private var test = RoadTest()
+    @Volatile private var latest = Exam() // the running test, written on the collector's thread
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        buildScreen()
+        faces = Faces(this)
         voice = Voice(this)
+        val debuggable = applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
+        state = state.copy(canScore = hasSpeedPermission(), simulated = debuggable)
         // With a lifecycle listener a Car Service restart reconnects instead of killing the app (AOSP).
         car = Car.createCar(this, null, Car.CAR_WAIT_TIMEOUT_DO_NOT_WAIT) { car, ready ->
             if (ready) watchRestrictions(car)
         }
-        if (checkSelfPermission(Car.PERMISSION_SPEED) == PackageManager.PERMISSION_GRANTED) {
-            startScoring()
-        } else {
-            requestPermissions(arrayOf(Car.PERMISSION_SPEED), REQUEST_SPEED)
-        }
+        if (!state.canScore) askPermission()
+        render()
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
-        if (requestCode != REQUEST_SPEED || collector != null) return
-        if (checkSelfPermission(Car.PERMISSION_SPEED) == PackageManager.PERMISSION_GRANTED) {
-            startScoring()
-        } else {
-            unscored = "차속 권한이 없어 채점할 수 없습니다"
-            render()
+        if (requestCode != REQUEST_SPEED) return
+        state = state.copy(canScore = hasSpeedPermission())
+        render()
+    }
+
+    /** Day/night switches arrive here (configChanges): the palette follows without restarting the test. */
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        render()
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        when (state.stage) {
+            Stage.HOME -> @Suppress("DEPRECATION") super.onBackPressed()
+            Stage.READY, Stage.DONE -> home()
+            Stage.TESTING -> moveTaskToBack(true)
         }
     }
 
@@ -70,20 +82,43 @@ class MainActivity : Activity() {
         super.onDestroy()
     }
 
-    private fun startScoring() {
-        collector = SignalCollector(this) { sample ->
-            val (next, new) = test.next(sample)
-            test = next
-            if (new.isNotEmpty()) runOnUiThread { if (!isDestroyed) onPenalties(next, new) }
-        }.apply { start() }
-        voice.say("도로주행 채점을 시작합니다.") // also warms up the engine: its first sentence is slow
+    override fun openRoadTest() = show(state.copy(stage = Stage.READY))
+
+    override fun home() {
+        if (state.stage != Stage.TESTING) show(state.copy(stage = Stage.HOME))
     }
 
-    private fun onPenalties(test: RoadTest, new: List<Penalty>) {
-        shown = test
-        notice.text = lineOf(new.last())
+    override fun askPermission() = requestPermissions(arrayOf(Car.PERMISSION_SPEED), REQUEST_SPEED)
+
+    override fun start() {
+        if (!state.canScore || state.driving || state.stage == Stage.TESTING) return
+        val id = ++run
+        var exam = Exam() // only touched on the collector's thread
+        latest = exam
+        collector = SignalCollector(this) { sample ->
+            val (next, new) = exam.next(sample)
+            exam = next
+            latest = next
+            if (new.isNotEmpty()) runOnUiThread { if (id == run && !isDestroyed) onPenalties(next, new) }
+        }.apply { start() }
+        voice.say("도로주행 채점을 시작합니다.") // also warms up the engine: its first sentence is slow
+        show(state.copy(stage = Stage.TESTING, exam = exam))
+    }
+
+    override fun end() {
+        if (state.stage != Stage.TESTING) return
+        collector?.close() // once it returns, no more samples: [latest] is final
+        collector = null
+        run++
+        val exam = latest
+        voice.say(endSpeechOf(exam.test))
+        revealResult = true
+        show(state.copy(stage = Stage.DONE, exam = exam, lastResult = exam.test))
+    }
+
+    private fun onPenalties(exam: Exam, new: List<Penalty>) {
         voice.say(speechOf(new))
-        render()
+        show(state.copy(exam = exam))
     }
 
     private fun watchRestrictions(car: Car) {
@@ -96,50 +131,33 @@ class MainActivity : Activity() {
         onRestrictions(manager.currentCarUxRestrictions)
     }
 
-    private fun onRestrictions(r: CarUxRestrictions) {
-        driving = r.isRequiresDistractionOptimization
+    private fun onRestrictions(r: CarUxRestrictions) = show(state.copy(driving = r.isRequiresDistractionOptimization))
+
+    private fun show(next: UiState) {
+        state = next
         render()
     }
 
-    /** Driving: score and last penalty. Parked: score and every penalty. Static text, no animation (NO_VIDEO). */
+    /** Rebuilds the screen: penalties and state changes are rare, and a fresh tree keeps every view honest. */
     private fun render() {
-        headline.text = if (unscored == null) headlineOf(shown) else "채점 안 함"
-        historyText.text = unscored ?: historyOf(shown.penalties)
-        unscored?.let { notice.text = it }
-        notice.visibility = if (driving) View.VISIBLE else View.GONE
-        history.visibility = if (driving) View.GONE else View.VISIBLE
+        if (isDestroyed) return
+        val ui = Ui(this, Palette.of(this), faces)
+        // Parked mid-test, show the latest span and coverage, not those of the last penalty.
+        val shown = if (state.stage == Stage.TESTING) state.copy(exam = latest) else state
+        val screen = when (state.stage) {
+            Stage.HOME -> homeScreen(ui, shown, this)
+            Stage.READY -> startScreen(ui, shown, this)
+            Stage.TESTING, Stage.DONE ->
+                if (state.driving) driveScreen(ui, shown.exam.test) else resultScreen(ui, shown, this, revealResult)
+        }
+        revealResult = false
+        setContentView(screen)
     }
 
-    private fun buildScreen() {
-        headline = text(HEADLINE_SP)
-        notice = text(NOTICE_SP).apply { text = NO_PENALTY }
-        historyText = text(HISTORY_SP)
-        history = ScrollView(this).apply { addView(historyText) }
-        setContentView(LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_HORIZONTAL
-            setBackgroundColor(Color.BLACK)
-            setPadding(PADDING_PX, PADDING_PX, PADDING_PX, PADDING_PX)
-            addView(headline)
-            addView(notice)
-            addView(history)
-        })
-        render()
-    }
-
-    private fun text(sp: Float) = TextView(this).apply {
-        textSize = sp
-        gravity = Gravity.CENTER
-        setTextColor(Color.WHITE)
-        setPadding(0, 0, 0, PADDING_PX / 2)
-    }
+    private fun hasSpeedPermission() = checkSelfPermission(Car.PERMISSION_SPEED) == PackageManager.PERMISSION_GRANTED
 
     private companion object {
         const val TAG = "MainActivity"
         const val REQUEST_SPEED = 1
-        const val HEADLINE_SP = 96f
-        const val NOTICE_SP = 44f
-        const val HISTORY_SP = 28f
-        const val PADDING_PX = 64
     }
 }

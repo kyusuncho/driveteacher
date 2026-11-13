@@ -16,3 +16,8 @@ __pycache__/
 # the recordings of experiments, kept as evidence
 assets/*
 !assets/experiments/
+
+# Tool working files: another agent tool, and Impeccable review screenshots (the surface brief in .impeccable/surfaces/ is kept)
+.omx/
+.impeccable/review/
+.impeccable/questions/
