@@ -404,7 +404,8 @@ bridge.py ─① Virtual Console HTTP (8088) ──→ 차속·기어·페달·�
   - 주행 중: 판 하나에 점수와 마지막 감점(항목 번호, 이름, 배점)만 보여 주고, 움직임은 없습니다.
   - 결과: 판정 표지와 감점 내역. 감점마다 시각, 항목 번호, 선생님 말투의 이유를 붙이고, "채점하지 못한 항목"(안전띠, 제한속도, 회전 안내를 못 받은 경우)을 따로 둡니다. 주차 중 시험을 끝내면 이 화면이 나옵니다.
   - 숫자는 Overpass, 한글은 Gothic A1입니다(둘 다 OFL, `app/src/main/assets/fonts/`, APK +7MB). 출발 항목 11~13은 "출발 신호 안함"처럼 묶음 이름을 붙여 화면과 음성에 씁니다. 주야간 전환은 앱을 다시 시작하지 않고 따라갑니다.
-  - 남은 것: CARLA 주행 영상으로 확인(완료 기준 두 번째), 채점을 서비스로 옮기기(지금은 액티비티가 닫히면 끝남. Back은 앱을 뒤로 보낼 뿐 시험은 계속), 시험 기록 저장, 오픈소스 고지 화면(글꼴 OFL 포함)
+  - 시연 촬영(11/14 ✅): 앱에서 시험을 시작해 둔 채 `run.sh --driver --map gangnam --turns left,right --seconds 110 --record recording/driveteacher-1114`로 달렸습니다. 출발 신호, 테헤란로7길 좌회전, 강남대로94길 우회전, 골목 좌회전을 모두 신호를 켜고 돌았고, 콘솔이 76번 응답하지 않았는데도 앱 결과는 **100점 합격, 감점 0건**입니다(주행 시간 3:39). ③의 안전띠·제한속도·회전 안내를 모두 받아 "채점하지 못한 항목"도 없습니다. 영상은 `assets/experiments/carla-driveteacher-gangnam-1114/`(161초, 정지 장면, 결과 화면 캡처와 10초 클립)에 있습니다. 주행 중에는 에뮬레이터 자체의 카메라 팝업(8초짜리 거리 영상)이 앱 위에 잠깐 뜹니다. 시연 때는 `check_signals.sh`를 쓰지 않습니다. 브리지의 ③은 앱 하나만 받으므로, 신호 기록기(`SignalRecordTest`)와 화면의 수집기가 서로 연결을 빼앗기 때문입니다.
+  - 남은 것: 감점이 나는 주행(`--no-turn-signal`)으로 감점 문구·음성 영상 확인(완료 기준 두 번째), 채점을 서비스로 옮기기(지금은 액티비티가 닫히면 끝남. Back은 앱을 뒤로 보낼 뿐 시험은 계속), 시험 기록 저장, 오픈소스 고지 화면(글꼴 OFL 포함)
 
 ### 6단계. 모드 2와 1-a
 - 트립 리포트, 점수 추이
@@ -413,10 +414,10 @@ bridge.py ─① Virtual Console HTTP (8088) ──→ 차속·기어·페달·�
 ### 7단계. 심사·제출 준비
 - **기획서:** 심사 네 항목에 맞춰 씁니다. 사업성(타깃, 예상 MAU 계산식과 가정, 리텐션, 확대 계획)은 지금 계획에 없으므로 새로 씁니다. 수치는 출처가 있는 것만 쓰고, 가정은 "가정"이라고 표시합니다. 기획서에 "핵심 기능"으로 쓴 것은 PT에서 보여 줘야 하므로, 12/2까지 확실히 되는 것만 핵심 기능으로 씁니다.
 - **release APK:** 서명 키는 저장소 밖에 두고(`.gitignore`에 키 파일 패턴 추가), 깨끗한 에뮬레이터에 설치해 확인합니다. 신호 수집 권한은 1단계에서, DO 선언과 TTS 권한은 5단계에서 main 매니페스트로 옮겼습니다. `CAR_SPEED`는 앱이 요청합니다(10/30). `FUSED_LOCATION`은 채점에 쓰지 않아 요청하지 않습니다.
-- **README.md**(필수 4항목), 오픈소스 고지(CARLA 코드 MIT, 에셋 CC-BY 등. 원문 확인 필요), 데모 영상 글꼴을 OFL 글꼴로 교체
+- **README.md**(필수 4항목), 오픈소스 고지(CARLA 코드 MIT, 에셋 CC-BY 등. 원문 확인 필요). 데모 영상 글꼴은 11/14에 앱의 Overpass(OFL)로 바꿨습니다(`make_demo.sh`가 Pillow로 제목을 그림. Homebrew ffmpeg 8 이후 drawtext가 없음)
 - 지도·데이터 출처 표시: 강남 지도는 "© OpenStreetMap contributors"(ODbL, 영상에도 표시), 단속 카메라는 경찰청 「전국무인교통단속카메라표준데이터」(공공데이터포털). 이용 조건 원문은 제출 전에 확인
 - **앱 이름·패키지명 (11/9 ✅):** 운전선생, `com.kyusun.driveteacher`(소스 패키지도 같은 이름). Pleos·현대차 상표는 쓰지 않습니다.
-- **시연 영상 재녹화:** 지금 영상은 우리 앱이 "주행 중에는 사용할 수 없습니다"로 막힌 장면이라 그대로 내지 않습니다. 감점 문구와 음성이 붙은 뒤 다시 녹화하고, "CARLA 자동 주행 시나리오, 안전벨트·제한속도는 시뮬레이터 값"이라고 자막을 넣습니다.
+- **시연 영상 재녹화:** 11/14에 새 화면으로 100점 주행을 녹화했습니다(5단계). 제출용으로는 감점이 나는 주행도 하나 녹화하고, "CARLA 자동 주행 시나리오, 안전벨트·제한속도는 시뮬레이터 값"이라고 자막을 넣습니다.
 - 개인정보처리방침. 위치를 저장한다면 위치정보 이용약관도 필요합니다.
 
 ### 일정 (10/28 수 ~ 12/2 수)
@@ -500,7 +501,7 @@ bridge.py ─① Virtual Console HTTP (8088) ──→ 차속·기어·페달·�
 | `app/src/debug/.../signal/SimChannel.kt` | ③ 수신. release에는 빈 구현 |
 | `data/` | 공공데이터포털에서 받은 전국 단속 카메라 CSV(9MB, CP949). **git에서 제외** |
 | `assets/` | `carla-pleos-demo.mp4`/`.gif`, 스크린샷, 카메라·EVS 캡처. **git에서 제외** (큰 파일이고, 카메라 사진에 사람 얼굴이 있음) |
-| `assets/experiments/` | 실험 녹화(`make_demo.sh` 결과). 근거로 남기려고 이것만 git에 넣음: `carla-careful-drive-1029/`(운전 스크립트 주행) |
+| `assets/experiments/` | 실험 녹화(`make_demo.sh` 결과). 근거로 남기려고 이것만 git에 넣음: `carla-careful-drive-1029/`(운전 스크립트 주행), `carla-driveteacher-gangnam-1114/`(운전선생 화면, 강남 회전 경로 100점) |
 
 git: `master` 브랜치 하나이고, 원격 저장소는 아직 없습니다.
 
@@ -513,6 +514,8 @@ tools/carla/check_signals.sh 90       # 1단계 검증: 앱이 기록한 신호 
 tools/carla/check_signals.sh 120 --driver   # 같은 검증을 운전 스크립트로. 앱 기록은 tools/carla/signals/app.csv
 tools/carla/check_signals.sh 100 --driver --map gangnam   # 강남 지도에서. ③의 안전벨트·제한속도·단속 카메라도 비교
 cd tools/carla && ./check_signals.sh 100 --driver --record recording/careful-1029 && ./make_demo.sh recording/careful-1029 ../../assets/experiments/carla-careful-drive-1029   # 검증하며 촬영 (녹화 최대 180초)
+# 앱 시연: 앱에서 "도로주행 시험 → 시험 시작"(P)을 누른 뒤
+cd tools/carla && ./run.sh --driver --map gangnam --turns left,right --seconds 110 --record recording/driveteacher-1114 && ./make_demo.sh recording/driveteacher-1114 ../../assets/experiments/carla-driveteacher-gangnam-1114
 
 # 단위 테스트
 ./gradlew :app:testDebugUnitTest
