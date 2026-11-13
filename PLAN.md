@@ -363,6 +363,12 @@ bridge.py ─① Virtual Console HTTP (8088) ──→ 차속·기어·페달·�
   - 결과(10/29 17:09): 두 가지를 고친 뒤 `check_signals.sh 60 --driver --map gangnam` PASS. 앱은 P → D → 왼쪽 신호(움직이기 전) → 19.7m에서 꺼짐을 봤고, 채점 **100점**입니다(`carla-careful-drive-gangnam-1029.csv`).
 - 회전 결과(10/30): `check_signals.sh 120 --driver --map gangnam --turns left,right` PASS. 출발 → 282m 앞 교차로 좌회전(테헤란로7길) → 다음 교차로 우회전 → 골목에서 왼쪽으로 꺾이는 교차로 둘. 앱은 ③으로 회전 안내 139줄을 받아 브리지와 100% 일치했습니다. 채점 **100점**(`carla-turns-gangnam-1030.csv`). 처음에는 32(신호 미유지)가 하나 나왔는데, 가상 콘솔이 왼쪽 신호를 2ms 동안 Off로 되돌렸다가 브리지가 다시 보낸 것이었습니다(Mac 스왑 16GB, CARLA가 5초·9초 멈춘 때. 다른 한 번은 2.6초 Off였고 회전 지점 뒤라 감점 없음). 그래서 1초 안에 되돌아온 꺼짐은 끈 것으로 보지 않게 했습니다. 같은 경로를 `--no-turn-signal`로 달리면(PASS) 네 회전에서 각각 30, **72점**입니다(`carla-turns-no-signal-gangnam-1030.csv`).
   - 멈춘 동안 에뮬레이터의 차는 마지막 차속으로 계속 가므로, 앱은 회전 지점까지 거리를 CARLA보다 짧게 셉니다. 다음 안내(1초마다)가 오면 다시 맞추지만, 5초 멈춤 뒤에는 31m가 어긋나 같은 회전을 새 회전으로 보기도 했습니다(감점은 없었음). 실차에서는 차속과 내비가 같은 차를 보므로 이런 어긋남이 작습니다.
+  - **콘솔 멈춤 대응(10/31~11/1).** 앱을 켜고 달린 첫 주행(10/31)에서 위 어긋남이 실제 감점이 됐습니다. 우회전 7초 전에 콘솔이 4초 넘게 멈추자 앱이 회전 지점을 지나 30을 매기고, 안내가 다시 오자 같은 회전을 새 회전으로 보고 또 매겼습니다(72점이어야 할 주행이 65점). 콘솔 요청을 막지 않는 방식(비동기)도 검토했지만, 리뷰에서 CARLA가 멈추지 않는 대신 차속 점프(급제동 21), 운전 스크립트 거리 어긋남(출발 신호 12), N 전환 시 차속(18) 같은 새 오판이 나와 빼고, 원인만 고쳤습니다(사용자 결정).
+    - 브리지가 1.5초 넘게 안내를 못 보내면 마지막 안내를 다시 보냅니다(`SimChannel`). 앱은 회전 지점을 "지금 센 거리 + 남은 거리"로 다시 잡으므로, 멈춘 동안 센 헛거리만큼 회전도 앞으로 갑니다. 시험용 프록시로 콘솔을 12초마다 4초씩 멈추게 하고 안내 없는 경로를 달리면, 고치기 전 8번이던 30이 고친 뒤 4번(회전마다 한 번)이었습니다. 멈춤 없이는 72점, 신호를 켠 경로는 회전 감점 없음.
+    - 콘솔이 비활성화되면(하트비트 3초 끊김) 방향지시등을 Off로 되돌립니다. 11/1에는 브리지 루프가 콘솔 대기에 묶여 다시 켜는 데 1.7초가 걸렸고, 신호 켠 회전이 32를 받았습니다. 이제 하트비트는 0.5초마다, 실패하면 0.1초 뒤 다시 보내 한두 번 놓쳐도 비활성화되지 않게 하고, 방향지시등은 별도 스레드가 써서 콘솔이 다시 받는 대로 되돌립니다. 콘솔 자체가 3초 넘게 멈추면 Off는 막을 수 없습니다.
+    - 운전 스크립트가 출발할 때 브레이크를 떼고 1~2초 서 있었습니다(가속 페달 제어가 차가 움직이는 데까지 올라가는 시간). 앱은 브레이크 없이 3초 서 있으면 20(정지 때 미제동)이라, 콘솔이 조금만 늦어도 감점이 났습니다(11/1 세 번 중 두 번). 이제 정지에서 출발할 때는 바로 차가 움직이는 만큼 밟습니다(0.45). 앱이 본 브레이크 없이 선 시간은 최대 0.8초였고, 스크립트가 주행 끝에 이 값을 앱처럼(실제 시간, 3km/h까지) 재서 보고합니다.
+    - 결과(11/1): `check_signals.sh 120 --driver --map gangnam --turns left,right` PASS(콘솔 끊김 38% 제외). 안내 181줄 중 40줄쯤이 다시 보낸 것이었고, 앱 기록 채점 **100점**(`carla-turns-stalls-gangnam-1101.csv`). 앱을 켜고 신호 켠 경로를 다시 달려도 콘솔 오류 30번 속에 **100점**이었습니다.
+    - 남은 것: 콘솔이 3초 넘게 멈춰 신호가 Off로 되돌려지는 동안 신호 켠 회전의 30m 안에 있으면 32가 납니다. 앱은 1초 안에 되돌아온 꺼짐을 무시하게 돼 있지만, 실제로는 그 뒤 차속 샘플이 들어오기 전까지만 무시하므로 보통 약 0.1초입니다(차속 10Hz, 도착 지연 중앙값 1~2ms). 차속이 늦게 올 때만 길어지는데, 5단계에서 차속을 신호 수집 스레드로 받게 바꾼 뒤 그런 긴 지연도 줄었습니다(p99 0.2~0.5초 → 25ms). 회전 직후 멈추면 33도 날 수 있습니다(고치기 전과 같음).
 - 한계: 다른 차를 보지 못해 교통 없이 달립니다. 차로 변경도 하지 않습니다. 회전 안내는 계획(100m) 안의 회전만 보내므로, 실제 내비처럼 수백 m 앞에서 미리 알리지는 않습니다.
 - 결과: `check_signals.sh 120 --driver`로 에뮬레이터까지 연결해 네 번 달렸고, 모두 1단계 비교 PASS였습니다(10/28 23:40~23:55). 리뷰를 반영한 마지막 주행은 빨간불에서 세 번(14·25·20초) 섰고, 매번 3초 뒤 N으로 바꾸고 출발 전에 D로 돌렸습니다. 앱이 본 1초 변화율은 최대 +6.0/−9.0km/h였고, 그 기록을 채점하면 **감점 없이 100점**이었습니다(`RoadTestTest`, `carla-careful-drive-1028.csv`). 같은 엔진이 자동 주행은 67점으로 채점하므로, 두 주행을 구분합니다. 10/29 출발 신호 항목이 생긴 뒤에는 이 기록과 아래 1029 기록이 출발 신호 안 함으로 각각 95점입니다(스크립트가 출발 신호를 내기 전 기록).
 - 촬영(10/29 05:40): `check_signals.sh 100 --driver --record recording/careful-1029`로 한 번 더 달리며 CARLA 내려다본 그림과 에뮬레이터 화면을 녹화했습니다(`assets/experiments/carla-careful-drive-1029/`, 168초, 영상과 정지 장면 4장). 출발 위치가 매번 무작위라 경로는 위와 다르고, 신호에서 35초 서며 N으로 기다렸습니다. 1단계 비교 PASS, 앱 기록 채점 **100점**(`carla-careful-drive-1029.csv`도 `RoadTestTest`에 추가). 에뮬레이터 녹화는 최대 180초라 주행을 100초로 줄였습니다(녹화하면 실제 시간이 시뮬레이션의 약 1.35배). 정차 중 에뮬레이터 화면에 뜨는 카메라 팝업은 8초짜리 거리 영상(주차된 SUV)이 반복될 뿐이고 사람은 나오지 않습니다.
@@ -483,7 +489,7 @@ bridge.py ─① Virtual Console HTTP (8088) ──→ 차속·기어·페달·�
 | `app/src/test/`, `app/src/androidTest/.../signal/` | `SampleTest`(CSV 형식), `EventDetectorTest`·`RoadTestTest`(8차 CARLA 녹화 포함, `src/test/resources/`, 공용 도구 `TestDrives.kt`), `SignalRecordTest`(신호 흐름을 `cache/signals.csv`로 녹화) |
 | `app/src/androidTest/.../probe/` | 0단계 실측 테스트: `VehicleSignalProbeTest`, `NaviLocationProbeTest`, `UxAudioProbeTest` |
 | `app/src/debug/` | 실측용 권한, DO 선언 화면(`DoProbeActivity`). release 빌드에는 들어가지 않음 |
-| `tools/carla/` | `bridge.py`(CARLA → Pleos, ③ 채널 포함), `run.sh`, `bev.py`(내려다본 그림), `make_demo.sh`(데모 영상 합성), `check_signals.sh` + `compare_signals.py`(1단계 검증, 테스트 `test_compare_signals.py`), `driver.py`(응시자처럼 운전하는 스크립트, `--driver`), `traffic_info.py`(OSM 지도 제한속도, 단속 카메라 고르기·알림 계산, 테스트 `test_traffic_info.py`), `compose.yaml`, `Dockerfile` |
+| `tools/carla/` | `bridge.py`(CARLA → Pleos, ③ 채널 포함, 테스트 `test_bridge.py`), `run.sh`, `bev.py`(내려다본 그림), `make_demo.sh`(데모 영상 합성), `check_signals.sh` + `compare_signals.py`(1단계 검증, 테스트 `test_compare_signals.py`), `driver.py`(응시자처럼 운전하는 스크립트, `--driver`), `traffic_info.py`(OSM 지도 제한속도, 단속 카메라 고르기·알림 계산, 테스트 `test_traffic_info.py`), `compose.yaml`, `Dockerfile` |
 | `tools/carla/maps/` | `gangnam.osm`(강남역~역삼역 OSM, 차도만), `gangnam-cameras.csv`(그 안의 단속 카메라 7대). 만드는 방법은 `traffic_info.py` 첫머리 |
 | `app/src/debug/.../signal/SimChannel.kt` | ③ 수신. release에는 빈 구현 |
 | `data/` | 공공데이터포털에서 받은 전국 단속 카메라 CSV(9MB, CP949). **git에서 제외** |
@@ -505,6 +511,7 @@ cd tools/carla && ./check_signals.sh 100 --driver --record recording/careful-102
 # 단위 테스트
 ./gradlew :app:testDebugUnitTest
 cd tools/carla && python3 -m unittest test_compare_signals test_traffic_info
+cd tools/carla && docker compose run --rm --no-deps -T client python -m unittest test_bridge   # bridge.py는 carla가 있는 컨테이너에서
 
 # 차량 신호 실측 (약 2.5분). 콘솔 주행거리가 1km씩 늘어남(콘솔은 줄일 수 없음)
 ./gradlew :app:installDebug :app:installDebugAndroidTest

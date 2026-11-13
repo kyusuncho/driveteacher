@@ -375,6 +375,20 @@ class RoadTestTest {
     }
 
     @Test
+    fun `a turn the navigation keeps repeating while the speed runs on stays ahead`() {
+        // A simulator console stall (10/31): from 10 s CARLA is frozen 40 m before a right turn, but the emulator keeps
+        // its 36 km/h, so the app counts 60 m the car never drove. From 16 s the car drives on and turns at 20 s.
+        val before = (0L..10_000L step 1_000).flatMap { nextTurn(RIGHT, 140f - it / 100f, it) }
+        val after = (16_000L..19_000L step 1_000).flatMap { nextTurn(RIGHT, 40f - (it - 16_000) / 100f, it) } +
+            nextTurn(OFF, 0f, 21_000)
+        // The bridge re-sends the last guidance every 1.5 s while frozen: the turn moves on with the app's metres.
+        val resent = listOf(11_500L, 13_000L, 14_500L).flatMap { nextTurn(RIGHT, 40f, it) }
+        assertEquals(TURN_NO_SIGNAL to 20_000.0, timed(score(cruise(before + resent + after))))
+        // Without them the app passes the turn at 14 s, and 60 m on the guidance is a new turn: scored twice.
+        assertEquals(listOf(TURN_NO_SIGNAL, TURN_NO_SIGNAL), penalties(score(cruise(before + after))))
+    }
+
+    @Test
     fun `a turn first heard of within 30 m of it is not signalled late`() {
         // The navigation first gives the turn at 10 s, 20 m ahead (a new route, say): signalling then is in time,
         // but never signalling still costs 30.
@@ -457,6 +471,16 @@ class RoadTestTest {
         // the navigation's next turn coming over ③. Under host load CARLA stalled up to 9 s, and the Virtual Console
         // reset the signal to off for 2 ms (133.4 s, before a turn) and 2.6 s (160.1 s, just past one).
         val test = score(recording("carla-turns-gangnam-1030.csv"))
+        assertEquals(listOf<Enum<*>>(), penalties(test))
+        assertEquals(100, test.score)
+    }
+
+    @Test
+    fun `recorded drive through console stalls with guidance re-sent keeps all 100 points`() {
+        // The same route and signals, the bridge now re-sending the guidance while stuck (11/1): the console was out
+        // for 38% of the drive, and about 40 of the 181 guidance lines were re-sends. Also the driver's launch
+        // throttle: the app saw it standing in D without the brake for 0.8 s at most (1-2 s before).
+        val test = score(recording("carla-turns-stalls-gangnam-1101.csv"))
         assertEquals(listOf<Enum<*>>(), penalties(test))
         assertEquals(100, test.score)
     }

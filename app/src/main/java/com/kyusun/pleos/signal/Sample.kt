@@ -7,9 +7,10 @@ sealed interface Sample {
     /**
      * SystemClock.elapsedRealtimeNanos() clock: the HAL timestamp for [Speed] and [Gear] (gear's first value, which
      * carries the time of its last change, is moved up to when the app subscribed), the moment the callback fired for
-     * the rest. Never decreases within one signal. Samples are delivered in arrival order, and AAOS property events
-     * come through the main looper, so across signals tNs can be out of order by that delay: 0.6 s seen on the
-     * emulator, seconds while it stalls. Sort by tNs within such a window when merging signals.
+     * the rest. Never decreases within one signal. Samples are delivered in arrival order, so across signals tNs can be
+     * out of order by how late each arrives: 0.6 s seen on the emulator while AAOS property events came through the
+     * main looper (before 11/1 they come on the collector's thread), seconds while it stalls. Sort by tNs within such a
+     * window when merging signals.
      */
     val tNs: Long
 

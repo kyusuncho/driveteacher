@@ -29,6 +29,12 @@ SHIFT_S = 1.0  # a gear is selected this long before the brake comes off, and P 
 HOLD_BRAKE = 0.6
 REF_LEAD = 1.0  # m/s: the target speed stays this close to the car's, or the controller lunges to catch up
 MAX_THROTTLE = 0.6
+# From rest the throttle goes straight to about where CARLA's car starts to move, as a driver's foot goes from the brake
+# to the accelerator. The controller winding up to it left the car standing 1-2 s with the brake already off, and the
+# app allows 3 s: console stalls on top made it 3 s and cost 5 points (item 20, twice on 11/1).
+LAUNCH_THROTTLE = 0.45
+STOPPED_MPS = 0.5 / 3.6  # the app's standstill
+MOVING_MPS = 3.0 / 3.6  # ...and where its stop ends
 KP, KI = 0.4, 0.1  # throttle, per m/s of error (the integral makes up for drag)
 KB = 0.3  # brake, per m/s of error: CARLA's brakes bite hard, and no integral so they never wind up
 BLINK_BEFORE_M = 40.0  # before a junction it turns through (the law says 30 m); the app counts from its middle
@@ -124,6 +130,8 @@ class Driver:
         self.t = 0.0
         self.recent: deque[tuple[float, float]] = deque()  # (t, km/h) for the 1 s rate
         self.rates = (0.0, 0.0)
+        self.brake_off_at: Optional[float] = None  # wall time the brake came off in this stop (app item 20)
+        self.longest_unbraked = 0.0  # wall s, as the app counts: the emulator holds through console stalls
         self.worst = ""  # where the hardest braking second ended
         self.stopping_for = None
 
@@ -148,7 +156,15 @@ class Driver:
         fall = MAX_DECEL if for_light else DECEL  # only a light changing close by needs more than planned braking
         self.v_ref = clamp(target, self.v_ref - fall * self.dt, self.v_ref + ACCEL * self.dt)
         self.v_ref = clamp(self.v_ref, v - REF_LEAD, v + REF_LEAD)
-        self.ego.apply_control(self._pedals(v, go) if phase != "park" else carla.VehicleControl(brake=1.0))
+        control = self._pedals(v, go) if phase != "park" else carla.VehicleControl(brake=1.0)
+        self.ego.apply_control(control)
+        # As the app judges item 20: from the brake coming off to any moment still standing, a stop lasting to 3 km/h.
+        if control.brake > 0.0 or v >= MOVING_MPS or self.gear == "Park":
+            self.brake_off_at = None
+        elif self.brake_off_at is None:
+            self.brake_off_at = now
+        if self.brake_off_at is not None and v < STOPPED_MPS:
+            self.longest_unbraked = max(self.longest_unbraked, now - self.brake_off_at)
         self._signal(phase)
         if phase != "park":  # the car settles onto the road after it spawns; the console ignores speed in P
             self._measure(v)
@@ -157,7 +173,8 @@ class Driver:
     def report(self) -> str:
         up, down = self.rates
         return (f"driver: largest 1 s speed changes +{up:.1f} / {down:.1f} km/h per s (hard: +9.7 / -10.8); "
-                f"hardest braking ended {self.worst}")
+                f"hardest braking ended {self.worst}; longest standing in gear without the brake "
+                f"{self.longest_unbraked:.1f} s (allowed: 3)")
 
     def _shift(self, phase: str, wanted: float) -> None:
         if phase == "park":
@@ -181,7 +198,10 @@ class Driver:
             self.integral = 0.0
             return carla.VehicleControl(throttle=0.0, brake=min(-KB * error, 1.0), steer=steer)
         self.integral = clamp(self.integral + error * self.dt, 0.0, 2.0)
-        return carla.VehicleControl(throttle=clamp(KP * error + KI * self.integral, 0.0, MAX_THROTTLE), steer=steer)
+        throttle = clamp(KP * error + KI * self.integral, 0.0, MAX_THROTTLE)
+        if v < STOPPED_MPS:  # pulling away
+            throttle = max(throttle, LAUNCH_THROTTLE)
+        return carla.VehicleControl(throttle=throttle, steer=steer)
 
     def _update_plan(self) -> None:
         here = self.ego.get_transform()

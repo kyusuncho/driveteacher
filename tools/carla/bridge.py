@@ -57,11 +57,26 @@ SENT, DROPPED, UNKNOWN = "sent", "dropped", "unknown"
 # The console resets the turn signal to Off whenever it deactivates (no heartbeat for 3 s; gear is kept, checked
 # 10/28), so the blinker is re-sent this often even when CARLA's does not change.
 TURN_RESEND_S = 1.0
+# The app ignores a blinker Off only until the next speed sample, ~0.1 s (RoadTest.kt onTurn), so near a signalled
+# turn almost any reset costs a 32: the heartbeat below is what keeps the console from resetting. The blinker has its
+# own thread, so what reset is left is undone as soon as the console takes writes, not after a blocked tick loop: it
+# retries this soon after a failed write or a sign of a reset (one write with no answer still holds it for
+# CONSOLE_TIMEOUT_S). 11/1: the loop sat in console timeouts, the Off lasted 1.7 s and a signalled turn lost 7 points.
+TURN_RETRY_S = 0.1
+# The heartbeat (3 s window) beats this often and, after a failure, again this soon: one lost request no longer
+# deactivates the console, and an inactive console (503) comes back at once.
+HEARTBEAT_S = 0.5
+HEARTBEAT_RETRY_S = 0.1
 PARK_DEADLINE_S = 6.0  # the final stop/Park/Off retries; docker stop allows 10 s before SIGKILL
 # What a console request can fail with: urllib passes http.client errors (IncompleteRead, BadStatusLine) through.
 CONSOLE_ERRORS = (OSError, http.client.HTTPException)
+CONSOLE_TIMEOUT_S = 2.0  # a console write or heartbeat with no answer by then is given up
 SIM_PORT = 7777  # the app's SimChannel.kt; run.sh publishes it and sets `adb reverse`
 SIM_SEND_TIMEOUT_S = 1.0  # an app that stops reading must not stall the tick loop
+# Re-send the turn guidance when the tick loop has sent none for this long (a console write blocks it). Over the
+# loop's own 1 s, so a loop keeping time never sees a duplicate. A re-send must move the turn less than the app's
+# NEAR_M (Turns.kt, 30 m) to stay the same turn: 1.5 s plus one poll at driver.py's 40 km/h is 20 m.
+GUIDANCE_RESEND_S = 1.5
 DEFAULT_TOWN = "Town10HD_Opt"  # the server's map at start; reloaded after a --map run left an OSM map loaded
 # --map NAME: maps/NAME.osm (+ NAME-cameras.csv), and where the ego starts so a run passes cameras:
 # road, lat, lon, compass heading. gangnam: 테헤란로 at 강남역, heading for the 역삼역 cameras about 800 m on.
@@ -106,8 +121,10 @@ class PleosConsole:
         self.dry_run = dry_run
         self.log = log
         self.gear = None
-        self.turn = None
+        self.turn = None  # what the console shows, as far as we know (None: unsure)
+        self.turn_wanted: str | None = None  # what it should show (set by the tick loop, written by _keep_turn)
         self.turn_sent_at = 0.0
+        threading.Thread(target=self._keep_turn, daemon=True).start()
 
     def _put(self, path: str, params: dict) -> str:
         """SENT, DROPPED (503 during a console stall) or UNKNOWN (no answer). Callers re-send on their next tick."""
@@ -115,7 +132,7 @@ class PleosConsole:
         if self.dry_run:
             return SENT
         try:
-            urllib.request.urlopen(urllib.request.Request(url, method="PUT"), timeout=2).read()
+            urllib.request.urlopen(urllib.request.Request(url, method="PUT"), timeout=CONSOLE_TIMEOUT_S).read()
             return SENT
         except urllib.error.HTTPError as e:
             body = e.read().decode(errors="replace")
@@ -143,12 +160,14 @@ class PleosConsole:
                 try:
                     urllib.request.urlopen(
                         urllib.request.Request(f"{self.base_url}/browser/session?client={client_id}", method="POST"),
-                        timeout=2,
+                        timeout=CONSOLE_TIMEOUT_S,
                     ).read()
                 except CONSOLE_ERRORS as e:
                     print(f"console heartbeat failed: {e!r}")
                     self.maybe_reset()
-                time.sleep(1)
+                    time.sleep(HEARTBEAT_RETRY_S)
+                    continue
+                time.sleep(HEARTBEAT_S)
 
         threading.Thread(target=beat, daemon=True).start()
         self._wait_until_active()
@@ -157,7 +176,7 @@ class PleosConsole:
         deadline = time.monotonic() + timeout_s
         while time.monotonic() < deadline:
             try:
-                with urllib.request.urlopen(f"{self.base_url}/vehicle/state", timeout=2) as response:
+                with urllib.request.urlopen(f"{self.base_url}/vehicle/state", timeout=CONSOLE_TIMEOUT_S) as response:
                     if json.load(response)["controls"].get("emulator_active"):
                         return
             except (*CONSOLE_ERRORS, ValueError):  # ValueError: a cut-off JSON body
@@ -176,13 +195,21 @@ class PleosConsole:
         return self.gear == gear
 
     def set_turn(self, mode: str) -> bool:
-        if mode != self.turn or time.monotonic() - self.turn_sent_at >= TURN_RESEND_S:
-            started = now_ms()
-            self.turn_sent_at = time.monotonic()
-            status = self._put("/vehicle/turn-signal", {"mode": mode})
-            self.turn = mode if status == SENT else None
-            self.log.write(started, "turn", mode, status=status)
+        """Asks for [mode]; _keep_turn writes it. True once the console has taken it."""
+        self.turn_wanted = mode
         return self.turn == mode
+
+    def _keep_turn(self) -> None:
+        """Writes the wanted blinker when it changes, when the console may have reset it, and every TURN_RESEND_S."""
+        while True:
+            mode = self.turn_wanted
+            if mode is not None and (mode != self.turn or time.monotonic() - self.turn_sent_at >= TURN_RESEND_S):
+                started = now_ms()
+                self.turn_sent_at = time.monotonic()
+                status = self._put("/vehicle/turn-signal", {"mode": mode})
+                self.turn = mode if status == SENT else None
+                self.log.write(started, "turn", mode, status=status)
+            time.sleep(TURN_RETRY_S)
 
     def maybe_reset(self) -> None:
         """Signs the console may have deactivated, which turns the blinker Off: log that possibility and re-send."""
@@ -232,16 +259,27 @@ class SimChannel:
     """③ simulator channel: what the emulator cannot fake, as the app's recording lines without the time
     (`limit,50`; Sample.kt). The app's debug build connects through `adb reverse tcp:7777` (run.sh) and takes these
     in place of the car's own values. A (re)connecting app first gets the latest value of every kind. Each line that
-    reached the socket is logged like a console write (compare_signals.py checks the app recorded it)."""
+    reached the socket is logged like a console write (compare_signals.py checks the app recorded it).
+
+    The turn guidance is also re-sent every GUIDANCE_RESEND_S while the tick loop sends none (stuck in a console
+    write, mostly). CARLA is frozen then, but the emulator keeps its last speed, so the app counts metres the car
+    never drove. The app puts the turn `remaining` metres ahead of where it thinks the car is, so each re-send moves
+    the turn on with it; with no guidance the app ran past the turn and scored it twice (10/31).
+    Left as they are (simulator artifacts, a few % of runs): a console that deactivates in such a stall turns the
+    blinker off for its length, which within 30 m of a signalled turn now scores 32 (the turn stays ahead; before,
+    the extra metres usually carried the app past it). And a stall that starts once the car is past a turn's middle
+    (the guidance no longer names it) still carries the app 30 m past it with the blinker on: 33."""
 
     def __init__(self, port: int, dry_run: bool, log: SendLog) -> None:
         self.log = log
         self.latest: dict[str, tuple] = {}
         self.client: socket.socket | None = None
-        self.lock = threading.Lock()  # the accept thread sends too
+        self.lock = threading.Lock()  # the accept and re-send threads send too
+        self.guided_at = 0.0  # when nextturn last reached the socket (monotonic)
         if not dry_run:
             server = socket.create_server(("0.0.0.0", port))  # in the container; run.sh publishes it on localhost only
             threading.Thread(target=self._accept, args=(server,), daemon=True).start()
+            threading.Thread(target=self._resend_guidance, daemon=True).start()
             log.write(now_ms(), "sim", port)  # compare_signals.py: the app was expected to connect
 
     def _accept(self, server: socket.socket) -> None:
@@ -261,7 +299,16 @@ class SimChannel:
             self.latest[kind] = values
             self._send(kind, values)
 
+    def _resend_guidance(self) -> None:
+        while True:
+            time.sleep(GUIDANCE_RESEND_S / 5)
+            with self.lock:
+                if "nextturn" in self.latest and time.monotonic() - self.guided_at >= GUIDANCE_RESEND_S:
+                    self._send("nextturn", self.latest["nextturn"])
+
     def _send(self, kind: str, values: tuple) -> None:
+        if kind == "nextturn":  # sent, replayed to a reconnecting app or re-sent: it counts from now
+            self.guided_at = time.monotonic()
         if self.client is None:
             return
         started = now_ms()

@@ -44,6 +44,8 @@ internal fun merge(vararg parts: List<Sample>): List<Sample> = parts.toList().fl
  * - carla-turns-gangnam-1030.csv: the same turning left, then right (--turns left,right), 120 s; the navigation's next
  *   turn came over ③ too.
  * - carla-turns-no-signal-gangnam-1030.csv: the same route forgetting the turn signal (--no-turn-signal).
+ * - carla-turns-stalls-gangnam-1101.csv: the same route signalled, after the bridge re-sends guidance through console
+ *   stalls and the driver's launch throttle (11/1, check_signals.sh PASS with 38% console outages left out).
  */
 internal fun recording(name: String): List<Sample> =
     checkNotNull(object {}.javaClass.getResource("/$name")).readText().lines().mapNotNull(::parseSample)
