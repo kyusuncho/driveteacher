@@ -7,8 +7,21 @@ cd "$(dirname "$0")"
 REC=${1:-recording}
 OUT=${2:-../../assets}
 mkdir -p "$OUT"
-FONT=/System/Library/Fonts/Helvetica.ttc
+FONT=../../app/src/main/assets/fonts/Overpass.ttf  # the app's own numeral face (OFL), so the video ships no system font
 VIDEO="$OUT/carla-pleos-demo.mp4"
+
+# The captions are drawn here and laid over the video: Homebrew's ffmpeg has no drawtext (no freetype) since 8.x.
+python3 - "$FONT" "$REC/titles.png" <<'PY'
+import sys
+from PIL import Image, ImageDraw, ImageFont
+font = ImageFont.truetype(sys.argv[1], 24)
+font.set_variation_by_axes([600])
+bar = Image.new("RGB", (2000, 50), (0x18, 0x19, 0x1F))
+draw = ImageDraw.Draw(bar)
+draw.text((20, 13), "CARLA 0.9.15 in Docker (headless) - birds-eye view", font=font, fill="white")
+draw.text((740, 13), "Pleos Connect emulator - fed by tools/carla/bridge.py", font=font, fill="white")
+bar.save(sys.argv[2])
+PY
 
 # Each CARLA frame lasts until the next one's wall-clock timestamp (the sim doesn't run at exactly real time).
 awk -F, 'NR > 1 { f[NR] = $1; w[NR] = $2 }
@@ -17,12 +30,12 @@ awk -F, 'NR > 1 { f[NR] = $1; w[NR] = $2 }
         printf "file %05d.jpg\n", f[NR] }' "$REC/frames.csv" > "$REC/frames.txt"
 
 # Both streams start together: the bridge starts the emulator recording at CARLA frame 0.
-ffmpeg -y -loglevel error -f concat -safe 0 -i "$REC/frames.txt" -i "$REC/pleos.webm" -filter_complex "
+ffmpeg -y -loglevel error -f concat -safe 0 -i "$REC/frames.txt" -i "$REC/pleos.webm" -i "$REC/titles.png" \
+  -filter_complex "
   [0:v]fps=20,scale=720:720,setsar=1[carla];
   [1:v]fps=20,scale=1280:720,setsar=1[pleos];
-  [carla][pleos]hstack=inputs=2,pad=2000:770:0:50:color=0x18191f,
-  drawtext=fontfile=$FONT:text='CARLA 0.9.15 in Docker (headless) - birds-eye view':x=20:y=13:fontsize=24:fontcolor=white,
-  drawtext=fontfile=$FONT:text='Pleos Connect emulator - fed by tools/carla/bridge.py':x=740:y=13:fontsize=24:fontcolor=white[v]" \
+  [carla][pleos]hstack=inputs=2,pad=2000:770:0:50:color=0x18191f[stack];
+  [stack][2:v]overlay=0:0[v]" \
   -map "[v]" -an -c:v libx264 -crf 22 -pix_fmt yuv420p -shortest "$VIDEO"
 
 ffmpeg -y -loglevel error -t 25 -i "$VIDEO" -vf \
