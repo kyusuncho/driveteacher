@@ -13,6 +13,14 @@ Build the map files once, on the Mac (no CARLA needed):
   curl -o raw.osm 'https://api.openstreetmap.org/api/0.6/map?bbox=127.0240,37.4950,127.0400,37.5030'
   python3 traffic_info.py roads raw.osm maps/gangnam.osm
   python3 traffic_info.py cameras ../../data/전국무인교통단속카메라표준데이터.csv maps/gangnam.osm maps/gangnam-cameras.csv
+
+The daechi map (강남운전면허시험장's road-test courses, course.py) keeps only the main roads, and leaves out ways
+around the site's gate whose small junctions the converter connects wrongly: 역삼로107길's one-way branch past the
+site and the slip roads where 역삼로 meets 도곡로101길. Then 테헤란로114길 runs on into 역삼로 as one road:
+  curl -o raw.osm 'https://api.openstreetmap.org/api/0.6/map?bbox=127.0600,37.4850,127.0880,37.5125'
+  python3 traffic_info.py roads raw.osm maps/daechi.osm --main \
+      --drop 522435834,911080730,911080729,471821884,915349621,915350126,379530420
+  python3 traffic_info.py cameras ../../data/전국무인교통단속카메라표준데이터.csv maps/daechi.osm maps/daechi-cameras.csv
 """
 from __future__ import annotations
 
@@ -29,6 +37,7 @@ ROAD_TYPES = [
     "motorway", "motorway_link", "trunk", "trunk_link", "primary", "primary_link", "secondary", "secondary_link",
     "tertiary", "tertiary_link", "unclassified", "residential",
 ]
+MAIN_ROAD_TYPES = [t for t in ROAD_TYPES if t not in ("unclassified", "residential")]
 # 안전속도 5030 (since 2021-04-17): 50 km/h on urban roads, 30 on side streets. Expressways keep their own.
 KOREA_URBAN_KPH = {"motorway": 100, "motorway_link": 80, "trunk": 80, "residential": 30}
 URBAN_DEFAULT_KPH = 50
@@ -51,18 +60,19 @@ class Camera(NamedTuple):
     place: str  # 설치장소, for people reading the file
 
 
-def _road_ways(root: ET.Element) -> Iterable[ET.Element]:
+def _road_ways(root: ET.Element, types: Iterable[str] = ROAD_TYPES) -> Iterable[ET.Element]:
     for way in root.iter("way"):
         tags = {t.get("k"): t.get("v") for t in way.iter("tag")}
-        if tags.get("highway") in ROAD_TYPES:
+        if tags.get("highway") in types:
             yield way
 
 
-def roads_only(osm: str) -> str:
-    """The drivable roads of an OSM extract, with their nodes and the bounds, without the edit history: what the
-    repo keeps."""
+def roads_only(osm: str, types: Iterable[str] = ROAD_TYPES, drop: Iterable[str] = ()) -> str:
+    """The drivable roads of an OSM extract ([types], less the way ids in [drop]), with their nodes and the bounds,
+    without the edit history: what the repo keeps."""
     root = ET.fromstring(osm)
-    ways = list(_road_ways(root))
+    dropped = set(drop)
+    ways = [w for w in _road_ways(root, types) if w.get("id") not in dropped]
     used = {nd.get("ref") for way in ways for nd in way.iter("nd")}
     for element in root:
         for name in EDIT_HISTORY:
@@ -179,9 +189,11 @@ def camera_alerts(cameras: Iterable[Camera], lat: float, lon: float, heading: fl
 
 
 def main(argv: List[str]) -> None:
-    if len(argv) == 3 and argv[0] == "roads":
+    if len(argv) >= 3 and argv[0] == "roads":
+        options = argv[3:]
+        drop = options[options.index("--drop") + 1].split(",") if "--drop" in options else []
         with open(argv[1], encoding="utf-8") as f:
-            kept = roads_only(f.read())
+            kept = roads_only(f.read(), MAIN_ROAD_TYPES if "--main" in options else ROAD_TYPES, drop)
         with open(argv[2], "w", encoding="utf-8") as f:
             f.write(kept)
     elif len(argv) == 4 and argv[0] == "cameras":

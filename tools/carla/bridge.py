@@ -14,6 +14,7 @@ No browser tab needed; close the Virtual Console page while bridging so its own 
   ./run.sh --driver    # driver.py's careful driver instead of the autopilot, without traffic
   ./run.sh --driver --map gangnam   # on 강남역~역삼역 from OpenStreetMap, with its speed cameras (traffic_info.py)
   ./run.sh --driver --map gangnam --turns right,left   # turning where it can, with the next turn sent over ③
+  ./run.sh --driver --course A   # 강남운전면허시험장's road-test course A (course.py) on its map, to the course's end
 """
 import argparse
 import http.client
@@ -33,7 +34,9 @@ import uuid
 
 import carla
 
+from course import COURSES, MAP_LINKS, route, turns as course_turns
 from driver import Driver, leads_on
+from odr_links import add_links
 from traffic_info import (ROAD_TYPES, Camera, angle_diff, camera_alerts, fill_speed_limits, load_cameras, osm_bounds,
                           road_limits)
 
@@ -68,6 +71,11 @@ TURN_RETRY_S = 0.1
 HEARTBEAT_S = 0.5
 HEARTBEAT_RETRY_S = 0.1
 PARK_DEADLINE_S = 6.0  # the final stop/Park/Off retries; docker stop allows 10 s before SIGKILL
+# A speed the console did not take holds the simulation (CARLA moves only when we tick) until it does, for up to this
+# long. A stalled console answers 503 at once, and ticking on let the car slow down while the app still saw the old
+# speed, then get it all at once: 14 -> 3 km/h within a second on 11/14, scored as hard braking that never happened.
+CONSOLE_HOLD_S = 10.0
+CONSOLE_HOLD_RETRY_S = 0.1
 # What a console request can fail with: urllib passes http.client errors (IncompleteRead, BadStatusLine) through.
 CONSOLE_ERRORS = (OSError, http.client.HTTPException)
 CONSOLE_TIMEOUT_S = 2.0  # a console write or heartbeat with no answer by then is given up
@@ -366,8 +374,8 @@ class Navigation:
         return min(points, key=lambda t: math.dist(self.locate(t.location), (lat, lon)))
 
 
-def load_osm_world(client: carla.Client, name: str) -> tuple[carla.World, Navigation]:
-    """maps/NAME.osm -> OpenDRIVE (CARLA's converter) -> a generated world, with its roads' limits and cameras.
+def osm_to_xodr(name: str) -> str:
+    """maps/NAME.osm -> OpenDRIVE (CARLA's converter, with the turns it leaves out added back: course.MAP_LINKS).
     The projection is centred on the map so coordinates stay small for Unreal and the OpenDRIVE file keeps a
     georeference CARLA can read (with the default settings it writes none and puts the map at 42N 2E)."""
     with open(f"maps/{name}.osm", encoding="utf-8") as f:
@@ -380,7 +388,12 @@ def load_osm_world(client: carla.Client, name: str) -> tuple[carla.World, Naviga
     settings.use_offsets = False
     settings.proj_string = (f"+proj=tmerc +lat_0={(min_lat + max_lat) / 2:.6f} +lon_0={(min_lon + max_lon) / 2:.6f} "
                             "+k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m +no_defs")
-    xodr = carla.Osm2Odr.convert(osm, settings)
+    return add_links(carla.Osm2Odr.convert(osm, settings), MAP_LINKS.get(name, []))
+
+
+def load_osm_world(client: carla.Client, name: str) -> tuple[carla.World, Navigation]:
+    """A generated world from maps/NAME.osm, with its roads' limits and cameras."""
+    xodr = osm_to_xodr(name)
     world = client.generate_opendrive_world(xodr, carla.OpendriveGenerationParameters(
         vertex_distance=2.0, max_road_length=500.0, wall_height=0.0, additional_width=0.6, smooth_junctions=True,
         enable_mesh_visibility=True))
@@ -518,7 +531,10 @@ def send(
     console.set_gear(gear)
     turn = turn_mode(ego)
     console.set_turn(turn)
-    console.set_controls(speed_kph, throttle, brake, steer * STEERING_WHEEL_MAX_DEG)
+    held_until = time.monotonic() + CONSOLE_HOLD_S
+    while (not console.set_controls(speed_kph, throttle, brake, steer * STEERING_WHEEL_MAX_DEG)
+           and time.monotonic() < held_until):
+        time.sleep(CONSOLE_HOLD_RETRY_S)
     light = str(ego.get_traffic_light_state()) if ego.is_at_traffic_light() else "-"
     close = nearby(world, ego)
 
@@ -572,6 +588,8 @@ def drive(
             # last throttle and ignores apply_control), so ask the traffic manager for 0 km/h instead.
             tm.vehicle_percentage_speed_difference(ego, 100.0)
         for _ in range(int(duration / TICK_SECONDS)):
+            if phase == "drive" and driver and driver.arrived:  # at the end of its course
+                break
             gear = driver.step(phase) if driver else None
             if phase == "park" and not driver:
                 ego.apply_control(carla.VehicleControl(throttle=0.0, brake=1.0))
@@ -598,7 +616,7 @@ def load_world(client: carla.Client, map_name: str | None) -> tuple[carla.World,
 
 def run(
     seconds: float, dry_run: bool, record_dir: str | None, log_path: str | None, careful: bool, map_name: str | None,
-    turns: list[str], turn_signal: bool,
+    turns: list[str], turn_signal: bool, course_name: str | None = None,
 ) -> None:
     client = carla.Client(os.environ.get("CARLA_HOST", "localhost"), 2000)
     client.set_timeout(120.0)
@@ -627,13 +645,20 @@ def run(
     client.get_trafficmanager().set_synchronous_mode(True)
 
     start = nav.start(*MAP_STARTS[map_name]) if map_name in MAP_STARTS else None
+    course = route(world.get_map(), COURSES[course_name]) if course_name else None
+    if course:
+        length = sum(a.wp.transform.location.distance(b.wp.transform.location) for a, b in zip(course, course[1:]))
+        print(f"course {course_name}: {length:.0f} m, turns " + ", ".join(t.kind for t in course_turns(course, world.get_map())))
+        at = course[0].wp.transform
+        start = carla.Transform(at.location + carla.Location(z=0.5), at.rotation)  # dropped onto the road
     actors = spawn(world, client, 0 if careful else TRAFFIC_COUNT, start)
     ego = actors[0]
     tm = client.get_trafficmanager()
     tm_port = tm.get_port()
     print(f"spawned ego + {len(actors) - 1} traffic vehicles{' (dry run)' if dry_run else ''}")
     recorder = Recorder(world, emulator, record_dir) if record_dir else None
-    driver = Driver(world, ego, TICK_SECONDS, lambda: nav.limit_kph(ego), turns, turn_signal) if careful else None
+    driver = (Driver(world, ego, TICK_SECONDS, lambda: nav.limit_kph(ego), turns, turn_signal, course)
+              if careful else None)
     if driver:
         phases = [("park", PREROLL_S), ("drive", seconds), ("stop", DRIVER_STOP_S)]
     elif recorder:
@@ -662,7 +687,7 @@ if __name__ == "__main__":
     # `docker stop` sends SIGTERM; turn it into SystemExit so cleanup restores async mode.
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--seconds", type=float, default=60.0)
+    parser.add_argument("--seconds", type=float, help="how long to drive (default 60; a --course's cap 3600)")
     parser.add_argument("--dry-run", action="store_true", help="CARLA only; don't touch the Pleos emulator")
     parser.add_argument("--record", metavar="DIR", help="relative dir: CARLA bird's-eye frames + Pleos screen video")
     parser.add_argument("--log", metavar="FILE", help="relative path: CSV of every value the consoles accepted")
@@ -670,7 +695,11 @@ if __name__ == "__main__":
     parser.add_argument("--map", choices=sorted(MAP_STARTS), help="a real-city map from maps/ instead of a town")
     parser.add_argument("--turns", default="", help="with --driver: turns to make in order, e.g. right,left")
     parser.add_argument("--no-turn-signal", action="store_true", help="with --driver: forget to signal turns")
+    parser.add_argument("--course", choices=sorted(COURSES),
+                        help="with --driver: a road-test course of 강남운전면허시험장 (its own map), to its end")
     args = parser.parse_args()
+    if args.course and (not args.driver or args.map or args.turns):
+        parser.error("--course needs --driver, and brings its own map and turns")
     turns = [t for t in args.turns.split(",") if t]
     if any(t not in ("left", "right") for t in turns) or ((turns or args.no_turn_signal) and not args.driver):
         parser.error("--turns takes left/right, and --turns and --no-turn-signal need --driver")
@@ -678,4 +707,6 @@ if __name__ == "__main__":
         parser.error("--record needs the emulator and a path relative to tools/carla")
     if args.log and (args.dry_run or os.path.isabs(args.log)):
         parser.error("--log needs the emulator and a path relative to tools/carla (the container sees only that)")
-    run(args.seconds, args.dry_run, args.record, args.log, args.driver, args.map, turns, not args.no_turn_signal)
+    seconds = args.seconds if args.seconds is not None else 3600.0 if args.course else 60.0
+    run(seconds, args.dry_run, args.record, args.log, args.driver, "daechi" if args.course else args.map, turns,
+        not args.no_turn_signal, args.course)

@@ -5,7 +5,8 @@ examinee: gentle acceleration and braking (well under 9.7 and 10.8 km/h per seco
 before the line at red and yellow lights with the brake held, shifting to N while it waits and back to D before it
 moves off, signalling left as it pulls out and blinking before turns, never over the road's limit. It keeps its lane
 and takes the straightest way through junctions, except where a given route (left, right, ...) says to turn: each turn
-at the first junction where its lane can make it onto a road that goes on. It tells the bridge the next turn the way
+at the first junction where its lane can make it onto a road that goes on. Or it drives a course (course.py): a planned
+way through given junctions, with U-turns and lane changes, stopping where it ends. It tells the bridge the next turn the way
 the car's navigation would (NaviHelper's next turn and its distance). It does not look for other cars, so the bridge
 spawns none with it.
 """
@@ -24,7 +25,12 @@ LATERAL = 1.5  # m/s² in curves
 STOP_MARGIN_M = 4.0  # the car's centre stops this far before the stop line; its nose is ~2.4 m ahead of the centre
 STEP_M = 2.0
 PLAN_M = 100.0  # far enough to see past a junction it is about to signal for
-NEUTRAL_AFTER_S = 3.0  # waiting at a light: N after this long (the road test wants it within 10 s)
+# ...on a course, past the longest it has: 학여울역's U-turn runs 89 m through junctions, and is signalled from 40 m before
+COURSE_PLAN_M = 200.0
+# Waiting at a light: N after this long as the app counts it, in real time (the road test wants it within 10 s). A
+# console stall holds the tick loop, so simulated seconds can last several real ones: on 11/14 three of them took 12.9 s
+# and cost 5 points (item 4). The longest stall seen was 6.6 s.
+NEUTRAL_AFTER_S = 2.0
 SHIFT_S = 1.0  # a gear is selected this long before the brake comes off, and P only after this long at rest
 HOLD_BRAKE = 0.6
 REF_LEAD = 1.0  # m/s: the target speed stays this close to the car's, or the controller lunges to catch up
@@ -43,6 +49,13 @@ PULL_OUT_M = 20.0  # the left signal from the start until this far in D; the app
 TURN_DEG = 30.0  # a junction it turns through more than this is a turn (more than UTURN_DEG: a U-turn, never taken)
 UTURN_DEG = 150.0
 ROUTE_ON_M = 200.0  # a turn is taken only onto a lane that goes on this far (a converted map has dead ends)
+# A course's lane change is signalled from this far before the lane it goes into starts (course.py LANE_CHANGE_M on):
+# 15 m before the car starts to move over.
+CHANGE_BLINK_M = 40.0
+ARRIVED_M = STOP_MARGIN_M + 3.0  # at rest this close to a course's end: arrived
+
+
+LIGHTS = {"left": carla.VehicleLightState.LeftBlinker, "right": carla.VehicleLightState.RightBlinker}
 
 
 def clamp(x: float, lo: float, hi: float) -> float:
@@ -88,6 +101,11 @@ def side(turn: float) -> Optional[str]:
     return None
 
 
+def signal_side(turn: float) -> Optional[str]:
+    """The blinker a heading change calls for: a U-turn is made from the left in Korea (as the app reads TBT)."""
+    return "left" if abs(turn) > UTURN_DEG else side(turn)
+
+
 def speed(actor: carla.Actor) -> float:
     v = actor.get_velocity()
     return math.hypot(v.x, v.y)  # as bridge.py sends it
@@ -96,11 +114,12 @@ def speed(actor: carla.Actor) -> float:
 class Driver:
     def __init__(
         self, world: carla.World, ego: carla.Actor, dt: float, speed_limit: Optional[Callable[[], float]] = None,
-        route: Optional[list[str]] = None, turn_signal: bool = True,
+        route: Optional[list[str]] = None, turn_signal: bool = True, course: Optional[list] = None,
     ) -> None:
         """[speed_limit]: the road's, km/h; CARLA's own by default (it reads speed signs, which only its towns have).
         [route]: the turns to make, "left" | "right", in order. [turn_signal]: False for an examinee who forgets to
-        signal turns (pulling out is still signalled)."""
+        signal turns (pulling out is still signalled). [course]: course.route()'s points to drive instead, from where
+        the car stands to where it stops."""
         self.ego, self.dt = ego, dt
         self.speed_limit = speed_limit or ego.get_speed_limit
         self.map = world.get_map()
@@ -112,6 +131,11 @@ class Driver:
         self.max_steer_deg = wheels[0].max_steer_angle
         self.wheelbase = wheels[0].position.distance(wheels[2].position) / 100.0  # cm -> m
         self.plan = [self.map.get_waypoint(ego.get_location())]
+        self.course = course
+        self.course_next = 1  # the course's next point to plan
+        self.marks = {id(p.wp): p for p in course or []}  # plan waypoint -> its course point
+        if course:
+            self.plan = [course[0].wp]
         self.dead_end = False
         self.v_ref = 0.0
         self.integral = 0.0
@@ -142,13 +166,14 @@ class Driver:
         # The emulator's car goes at the speed it is sent for as long as it is sent, which under load is longer than
         # the simulated time (CARLA ran 1.7x slower than real time on 10/29): count the distance the app sees.
         now = time.monotonic()
-        if self.gear == "Drive" and self.wall is not None:
-            self.driven += v * (now - self.wall)
+        since = now - self.wall if self.wall is not None else 0.0
+        if self.gear == "Drive":
+            self.driven += v * since
         self.wall = now
         self._update_plan()
         self._track_junction(v)
         wanted, for_light = self._allowed_speed(v) if phase == "drive" else (0.0, False)
-        self.at_rest = self.at_rest + self.dt if v < 0.1 and wanted < 0.5 else 0.0
+        self.at_rest = self.at_rest + since if v < 0.1 and wanted < 0.5 else 0.0  # real seconds, as the app counts
         self._shift(phase, wanted)
         self.since_shift += self.dt
         go = self.gear == "Drive" and self.since_shift >= SHIFT_S and wanted >= 0.5
@@ -169,6 +194,12 @@ class Driver:
         if phase != "park":  # the car settles onto the road after it spawns; the console ignores speed in P
             self._measure(v)
         return self.gear
+
+    @property
+    def arrived(self) -> bool:
+        """At rest at the end of its course."""
+        return (self.course is not None and self.dead_end and speed(self.ego) < 0.1
+                and self._ahead()[-1][0] < ARRIVED_M)
 
     def report(self) -> str:
         up, down = self.rates
@@ -203,9 +234,15 @@ class Driver:
             throttle = max(throttle, LAUNCH_THROTTLE)
         return carla.VehicleControl(throttle=throttle, steer=steer)
 
+    def _junction(self, wp: carla.Waypoint) -> bool:
+        """In a junction; on a course also on road short enough between two to be part of one (course.JOIN_M)."""
+        mark = self.marks.get(id(wp))
+        return mark.junction if mark else wp.is_junction
+
     def _update_plan(self) -> None:
         here = self.ego.get_transform()
-        if self.plan[0].transform.location.distance(here.location) > 6.0:  # lost the lane: start over
+        # Lost the lane: start over. A course's plan jumps across a lane change, so it is only ever trimmed.
+        if self.course is None and self.plan[0].transform.location.distance(here.location) > 6.0:
             self.plan = [self.map.get_waypoint(here.location)]
             self.turn_at = None
         forward = here.get_forward_vector()
@@ -216,6 +253,12 @@ class Driver:
             if self.plan.pop(0).id == self.turn_at:  # the car is making that turn: it counts as made
                 self.turn_at = None
                 print(f"driver t={self.t:.1f}s: turning {self.route.popleft()}")
+        if self.course is not None:
+            while self.course_next < len(self.course) and len(self.plan) * STEP_M < COURSE_PLAN_M:
+                self.plan.append(self.course[self.course_next].wp)
+                self.course_next += 1
+            self.dead_end = self.course_next >= len(self.course)
+            return
         self.dead_end = False
         while len(self.plan) * STEP_M < PLAN_M:
             last = self.plan[-1]
@@ -239,14 +282,15 @@ class Driver:
         return straightest(options, heading)
 
     def _track_junction(self, v: float) -> None:
-        if not self.plan[0].is_junction:
+        if not self._junction(self.plan[0]):
             self.junction = None
             return
         if self.junction is None:  # just entered: its length and turn from the plan through it
             ahead = self._ahead()
-            out = next(((s, w) for s, w in ahead if not w.is_junction), None)
+            out = next(((s, w) for s, w in ahead if not self._junction(w)), None)
             length = out[0] if out else ahead[-1][0]
-            turn = side(yaw_diff(self.ego.get_transform().rotation.yaw, out[1].transform.rotation.yaw)) if out else None
+            turn = (signal_side(yaw_diff(self.ego.get_transform().rotation.yaw, out[1].transform.rotation.yaw))
+                    if out else None)
             self.junction = (length, 0.0, turn, None)
         length, into, turn, mid = self.junction
         into += v * self.dt
@@ -263,15 +307,16 @@ class Driver:
             if turn and into < length / 2:
                 return turn.upper(), length / 2 - into
         ahead = self._ahead()
-        i = next((k for k, (_, w) in enumerate(ahead) if not w.is_junction), len(ahead))  # past the one the car is in
+        i = next((k for k, (_, w) in enumerate(ahead) if not self._junction(w)), len(ahead))  # past the one it is in
         while i < len(ahead):
-            entry = next((k for k in range(i, len(ahead)) if ahead[k][1].is_junction), None)
+            entry = next((k for k in range(i, len(ahead)) if self._junction(ahead[k][1])), None)
             if entry is None:
                 break
-            out = next((k for k in range(entry, len(ahead)) if not ahead[k][1].is_junction), None)
+            out = next((k for k in range(entry, len(ahead)) if not self._junction(ahead[k][1])), None)
             if out is None:
                 break
-            turn = side(yaw_diff(ahead[entry - 1][1].transform.rotation.yaw, ahead[out][1].transform.rotation.yaw))
+            turn = signal_side(yaw_diff(ahead[entry - 1][1].transform.rotation.yaw,
+                                        ahead[out][1].transform.rotation.yaw))
             if turn:
                 return turn.upper(), (ahead[entry][0] + ahead[out][0]) / 2
             i = out
@@ -343,19 +388,22 @@ class Driver:
         """Blink from BLINK_BEFORE_M before a junction the plan turns through until the car is out of it, or
         TURN_OFF_M past its middle as the app counts metres (CARLA can run slower than real time, and the app then
         counts more). Pulling out of park from the road edge (road test items 11~13) comes first: left from the start
-        of the drive until PULL_OUT_M, even when that ends inside a junction."""
+        of the drive until PULL_OUT_M, even when that ends inside a junction. On a course, a lane change is
+        signalled from CHANGE_BLINK_M before the new lane until the car is in it (course.py keeps it clear of turns)."""
         if phase != "drive" or not self.turn_signal:
             self.turn_blink = carla.VehicleLightState.NONE
         elif self.junction is None:  # inside a junction, keep what was decided before it
             blink = carla.VehicleLightState.NONE
             ahead = self._ahead()
-            entry = next((i for i, (s, w) in enumerate(ahead) if w.is_junction and s < BLINK_BEFORE_M), None)
-            out = next((w for _, w in ahead[entry:] if not w.is_junction), None) if entry is not None else None
+            entry = next((i for i, (s, w) in enumerate(ahead) if self._junction(w) and s < BLINK_BEFORE_M), None)
+            out = next((w for _, w in ahead[entry:] if not self._junction(w)), None) if entry else None
             if out is not None:
-                turn = side(yaw_diff(ahead[entry - 1][1].transform.rotation.yaw, out.transform.rotation.yaw))
+                turn = signal_side(yaw_diff(ahead[entry - 1][1].transform.rotation.yaw, out.transform.rotation.yaw))
                 if turn:
-                    blink = carla.VehicleLightState.RightBlinker if turn == "right" else carla.VehicleLightState.LeftBlinker
-            self.turn_blink = blink
+                    blink = LIGHTS[turn]
+            change = next((self.marks[id(w)].change for s, w in ahead
+                           if s < CHANGE_BLINK_M and id(w) in self.marks and self.marks[id(w)].change), None)
+            self.turn_blink = LIGHTS[change] if change and blink == carla.VehicleLightState.NONE else blink
         elif self.junction[3] is not None and self.driven - self.junction[3] >= TURN_OFF_M:
             self.turn_blink = carla.VehicleLightState.NONE
         pulling_out = phase == "drive" and self.driven < PULL_OUT_M
