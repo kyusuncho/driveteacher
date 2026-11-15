@@ -40,6 +40,21 @@ function svg(tag, attrs = {}) {
   return node;
 }
 
+/** A pause/play pill for looping motion (WCAG 2.2.2). onChange(paused) runs on every press. */
+function pauseButton(name, onChange) {
+  const button = document.querySelector(`[data-pause="${name}"]`);
+  if (!button) return { paused: () => false };
+  const label = button.querySelector("span");
+  let paused = false;
+  button.addEventListener("click", () => {
+    paused = !paused;
+    button.setAttribute("aria-pressed", String(paused));
+    label.textContent = paused ? "재생" : "멈춤";
+    onChange(paused);
+  });
+  return { paused: () => paused };
+}
+
 /* ---------- hero: the plates appear when the app on screen deducts ---------- */
 function initHero() {
   const video = document.querySelector(".unit__video");
@@ -55,7 +70,11 @@ function initHero() {
   }
   video.addEventListener("timeupdate", () => show(video.currentTime >= PENALTY_ON && video.currentTime < PENALTY_OFF));
   const play = () => video.play().catch(() => show(true)); // autoplay refused: keep the poster and the plates
-  new IntersectionObserver(([entry]) => (entry.isIntersecting ? play() : video.pause()), { threshold: 0.05 }).observe(video);
+  const control = pauseButton("hero", (paused) => (paused ? video.pause() : play()));
+  new IntersectionObserver(([entry]) => {
+    if (!entry.isIntersecting) video.pause();
+    else if (!control.paused()) play();
+  }, { threshold: 0.05 }).observe(video);
 }
 
 /* ---------- course replay ---------- */
@@ -80,15 +99,29 @@ async function initReplay() {
   }
   const scene = drawMap(map, data);
   const replay = createReplay(scene, data);
+  const status = document.querySelector('[data-readout="status"]');
+  const control = pauseButton("replay", (paused) => (paused ? replay.pause() : replay.resume()));
+  const announce = (id) => {
+    const run = RUNS[id];
+    const missed = run.missed.length ? `${run.missed.join(", ")}번째 회전에서 방향지시등을 켜지 않아 감점 ${run.missed.length}건` : "일곱 번의 회전 모두 신호, 감점 없음";
+    status.textContent = `${run.score}점 주행: ${missed}. ${run.score >= 70 ? "합격" : "불합격"}.`;
+  };
   document.querySelectorAll(".run").forEach((button) => {
     button.addEventListener("click", () => {
       document.querySelectorAll(".run").forEach((b) => b.setAttribute("aria-pressed", String(b === button)));
-      replay.select(button.dataset.run);
+      replay.select(button.dataset.run, control.paused());
+      announce(button.dataset.run);
     });
   });
-  replay.select("100");
-  new IntersectionObserver(([entry]) => (entry.isIntersecting ? replay.resume() : replay.pause()), { threshold: 0.2 }).observe(map);
-  document.addEventListener("visibilitychange", () => (document.hidden ? replay.pause() : replay.resume()));
+  replay.select("100", false);
+  const visible = { map: false };
+  new IntersectionObserver(([entry]) => {
+    visible.map = entry.isIntersecting;
+    if (!visible.map) replay.pause(); else if (!control.paused()) replay.resume();
+  }, { threshold: 0.2 }).observe(map);
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) replay.pause(); else if (visible.map && !control.paused()) replay.resume();
+  });
 }
 
 function drawMap(map, data) {
@@ -154,7 +187,8 @@ function createReplay(scene, data) {
   const turnAt = data.turns.map((t) => (t.s / data.length) * total);
   scene.lit.style.strokeDasharray = `${total} ${total}`;
   const readout = document.querySelector(".readout");
-  const field = (name) => document.querySelector(`[data-readout="${name}"]`);
+  const fields = Object.fromEntries(["score", "count", "turn"].map((name) => [name, document.querySelector(`[data-readout="${name}"]`)]));
+  const write = (name, value) => { if (fields[name].textContent !== String(value)) fields[name].textContent = String(value); };
   let run = RUNS[100];
   let start = 0, raf = 0, running = false, pausedAt = 0;
 
@@ -172,9 +206,9 @@ function createReplay(scene, data) {
       scene.turns[i].classList.toggle("is-miss", done && missed);
       scene.callouts[i].classList.toggle("is-on", done && missed && along - at < total * 0.12);
     });
-    field("score").textContent = String(score);
-    field("count").textContent = String(count);
-    field("turn").textContent = String(passed);
+    write("score", score);
+    write("count", count);
+    write("turn", passed);
     readout.classList.toggle("is-failing", score < 70);
   }
   function frame(now) {
@@ -185,10 +219,10 @@ function createReplay(scene, data) {
     raf = requestAnimationFrame(frame);
   }
   return {
-    select(id) {
+    select(id, paused) {
       run = RUNS[id];
       cancelAnimationFrame(raf);
-      if (reduceMotion.matches) { render(total); running = false; return; }
+      if (reduceMotion.matches || paused) { render(total); running = false; pausedAt = paused ? performance.now() : 0; start = pausedAt - REPLAY_MS; return; }
       start = performance.now(); pausedAt = 0; running = true;
       raf = requestAnimationFrame(frame);
     },
