@@ -21,3 +21,6 @@ assets/*
 .omx/
 .impeccable/review/
 .impeccable/questions/
+
+# Filled contest form (personal details, signatures) and email draft: sent by email, never published
+/submission/

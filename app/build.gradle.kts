@@ -16,6 +16,22 @@ android {
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
+
+    // The release key stays outside the repo: its path and password come from ~/.gradle/gradle.properties
+    // (driveteacher.storeFile, driveteacher.storePassword). Without them assembleRelease builds an unsigned APK.
+    signingConfigs {
+        providers.gradleProperty("driveteacher.storeFile").orNull?.let { path ->
+            create("release") {
+                storeFile = file(path)
+                storePassword = providers.gradleProperty("driveteacher.storePassword").get()
+                keyAlias = "driveteacher"
+                keyPassword = storePassword
+            }
+        }
+    }
+    buildTypes {
+        release { signingConfig = signingConfigs.findByName("release") }
+    }
 }
 
 dependencies {
