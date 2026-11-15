@@ -446,34 +446,53 @@ class EmulatorConsole:
 
 
 class Recorder:
-    """--record DIR: CARLA bird's-eye frames + frames.csv, plus the Pleos screen (pleos.webm). The Pleos recording
-    starts at frame 0, so both line up without syncing the container and Mac clocks."""
+    """--record DIR: CARLA bird's-eye frames + frames.csv, plus the Pleos screen in pieces (pleos-NNN.webm) listed
+    with their start times in segments.csv. The first piece starts at frame 0; make_demo.sh lines the rest up by
+    time, so the container and Mac clocks need no syncing beyond Docker's (it shares the Mac's)."""
 
-    # The emulator's cap. We stop it explicitly in close(); wall time runs longer than sim time under Rosetta.
+    # The emulator records at most 180 s at a time, so a new piece starts after SEGMENT_S of wall time; the slack
+    # covers ticks held up by console stalls (CONSOLE_HOLD_S).
     MAX_EMULATOR_RECORDING_S = 180
+    SEGMENT_S = 150.0
 
-    def __init__(self, world: carla.World, emulator: EmulatorConsole, record_dir: str) -> None:
+    def __init__(self, world: carla.World, emulator: EmulatorConsole, record_dir: str,
+                 area: list[carla.Location] | None = None) -> None:
         from bev import BirdsEye  # pillow is only needed when recording
 
         os.makedirs(record_dir, exist_ok=True)
         self.dir = record_dir
-        self.bev = BirdsEye(world)
+        self.bev = BirdsEye(world, area)
         self.emulator = emulator
         # The emulator writes the video on the Mac, so it needs the host path of this (mounted) directory.
-        self.host_video = os.path.join(os.environ["HOST_WORKDIR"], record_dir, "pleos.webm")
+        self.host_dir = os.path.join(os.environ["HOST_WORKDIR"], record_dir)
         self.csv = open(os.path.join(record_dir, "frames.csv"), "w")
         self.csv.write("frame,wall,phase,speed_kph,gear,light\n")
+        self.segments = open(os.path.join(record_dir, "segments.csv"), "w")
+        self.segments.write("file,wall\n")
+        self.segment_started: float | None = None
+        self.segment_count = 0
         self.count = 0
 
+    def _next_segment(self) -> None:
+        if self.segment_started is not None:
+            self.emulator.screenrecord_stop()
+        name = f"pleos-{self.segment_count:03d}.webm"
+        self.segment_started = time.time()
+        self.emulator.screenrecord_start(os.path.join(self.host_dir, name), self.MAX_EMULATOR_RECORDING_S)
+        self.segments.write(f"{name},{self.segment_started:.3f}\n")
+        self.segments.flush()
+        self.segment_count += 1
+
     def frame(self, ego: carla.Actor, hud: list[str], phase: str, speed_kph: float, gear: str, light: str) -> None:
-        if self.count == 0:
-            self.emulator.screenrecord_start(self.host_video, self.MAX_EMULATOR_RECORDING_S)
+        if self.segment_started is None or time.time() - self.segment_started > self.SEGMENT_S:
+            self._next_segment()
         self.bev.render(ego, hud).save(os.path.join(self.dir, f"{self.count:05d}.jpg"), quality=88)
         self.csv.write(f"{self.count},{time.time():.3f},{phase},{speed_kph:.1f},{gear},{light}\n")
         self.count += 1
 
     def close(self) -> None:
         self.csv.close()
+        self.segments.close()
         self.emulator.screenrecord_stop()
 
 
@@ -616,7 +635,7 @@ def load_world(client: carla.Client, map_name: str | None) -> tuple[carla.World,
 
 def run(
     seconds: float, dry_run: bool, record_dir: str | None, log_path: str | None, careful: bool, map_name: str | None,
-    turns: list[str], turn_signal: bool, course_name: str | None = None,
+    turns: list[str], turn_signal: bool, course_name: str | None = None, forget: frozenset[int] = frozenset(),
 ) -> None:
     client = carla.Client(os.environ.get("CARLA_HOST", "localhost"), 2000)
     client.set_timeout(120.0)
@@ -656,8 +675,9 @@ def run(
     tm = client.get_trafficmanager()
     tm_port = tm.get_port()
     print(f"spawned ego + {len(actors) - 1} traffic vehicles{' (dry run)' if dry_run else ''}")
-    recorder = Recorder(world, emulator, record_dir) if record_dir else None
-    driver = (Driver(world, ego, TICK_SECONDS, lambda: nav.limit_kph(ego), turns, turn_signal, course)
+    area = [p.wp.transform.location for p in course] if course else None
+    recorder = Recorder(world, emulator, record_dir, area) if record_dir else None
+    driver = (Driver(world, ego, TICK_SECONDS, lambda: nav.limit_kph(ego), turns, turn_signal, course, forget)
               if careful else None)
     if driver:
         phases = [("park", PREROLL_S), ("drive", seconds), ("stop", DRIVER_STOP_S)]
@@ -695,12 +715,20 @@ if __name__ == "__main__":
     parser.add_argument("--map", choices=sorted(MAP_STARTS), help="a real-city map from maps/ instead of a town")
     parser.add_argument("--turns", default="", help="with --driver: turns to make in order, e.g. right,left")
     parser.add_argument("--no-turn-signal", action="store_true", help="with --driver: forget to signal turns")
+    parser.add_argument("--forget-signal", default="", metavar="N,...",
+                        help="with --driver: forget to signal these turns (1 = the first), e.g. 2,5")
     parser.add_argument("--course", choices=sorted(COURSES),
                         help="with --driver: a road-test course of 강남운전면허시험장 (its own map), to its end")
     args = parser.parse_args()
     if args.course and (not args.driver or args.map or args.turns):
         parser.error("--course needs --driver, and brings its own map and turns")
     turns = [t for t in args.turns.split(",") if t]
+    try:
+        forget = frozenset(int(n) for n in args.forget_signal.split(",") if n)
+    except ValueError:
+        parser.error("--forget-signal takes turn numbers, e.g. 2,5")
+    if forget and not args.driver:
+        parser.error("--forget-signal needs --driver")
     if any(t not in ("left", "right") for t in turns) or ((turns or args.no_turn_signal) and not args.driver):
         parser.error("--turns takes left/right, and --turns and --no-turn-signal need --driver")
     if args.record and (args.dry_run or os.path.isabs(args.record)):
@@ -709,4 +737,4 @@ if __name__ == "__main__":
         parser.error("--log needs the emulator and a path relative to tools/carla (the container sees only that)")
     seconds = args.seconds if args.seconds is not None else 3600.0 if args.course else 60.0
     run(seconds, args.dry_run, args.record, args.log, args.driver, "daechi" if args.course else args.map, turns,
-        not args.no_turn_signal, args.course)
+        not args.no_turn_signal, args.course, forget)

@@ -115,10 +115,12 @@ class Driver:
     def __init__(
         self, world: carla.World, ego: carla.Actor, dt: float, speed_limit: Optional[Callable[[], float]] = None,
         route: Optional[list[str]] = None, turn_signal: bool = True, course: Optional[list] = None,
+        forget: frozenset[int] = frozenset(),
     ) -> None:
         """[speed_limit]: the road's, km/h; CARLA's own by default (it reads speed signs, which only its towns have).
         [route]: the turns to make, "left" | "right", in order. [turn_signal]: False for an examinee who forgets to
-        signal turns (pulling out is still signalled). [course]: course.route()'s points to drive instead, from where
+        signal turns (pulling out is still signalled); [forget]: the turns (1 = the first junction it turns through)
+        it forgets to signal. [course]: course.route()'s points to drive instead, from where
         the car stands to where it stops."""
         self.ego, self.dt = ego, dt
         self.speed_limit = speed_limit or ego.get_speed_limit
@@ -145,6 +147,8 @@ class Driver:
         self.route = deque(route or [])  # the turns still to make
         self.turn_at: Optional[int] = None  # id of the plan's waypoint where it starts making the next of those turns
         self.turn_signal = turn_signal
+        self.forget = forget
+        self.turns_entered = 0  # junctions the car turns through that it has entered
         self.turn_blink = carla.VehicleLightState.NONE  # for the junction ahead or the one the car is in
         # The junction the car is in: its length, how far into it (CARLA m), where it turns ("left", "right" or None)
         # and self.driven where the car passed its middle.
@@ -292,6 +296,7 @@ class Driver:
             turn = (signal_side(yaw_diff(self.ego.get_transform().rotation.yaw, out[1].transform.rotation.yaw))
                     if out else None)
             self.junction = (length, 0.0, turn, None)
+            self.turns_entered += turn is not None
         length, into, turn, mid = self.junction
         into += v * self.dt
         if mid is None and into >= length / 2:
@@ -399,7 +404,7 @@ class Driver:
             out = next((w for _, w in ahead[entry:] if not self._junction(w)), None) if entry else None
             if out is not None:
                 turn = signal_side(yaw_diff(ahead[entry - 1][1].transform.rotation.yaw, out.transform.rotation.yaw))
-                if turn:
+                if turn and self.turns_entered + 1 not in self.forget:
                     blink = LIGHTS[turn]
             change = next((self.marks[id(w)].change for s, w in ahead
                            if s < CHANGE_BLINK_M and id(w) in self.marks and self.marks[id(w)].change), None)

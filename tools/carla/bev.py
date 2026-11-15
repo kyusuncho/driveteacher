@@ -3,6 +3,8 @@
 The server runs with -nullrhi (no rendering), so there is no camera image. Instead we draw the road map,
 vehicles and traffic-light stop lines from CARLA's own state, which is exactly what the bridge sees.
 """
+from __future__ import annotations
+
 import math
 
 import carla
@@ -11,6 +13,7 @@ from PIL import Image, ImageDraw, ImageFont
 PX_PER_M = 8.0
 SIZE = 720  # square frame, ego at the center, north up
 MARGIN_M = 60.0
+AREA_MARGIN_M = 100.0  # with an area: the roads this far around it (a frame shows 45 m each side)
 BACKGROUND = (24, 26, 31)
 ROAD = (64, 68, 76)
 EGO = (250, 250, 250)  # not red: red/yellow/green are the traffic-light stop lines
@@ -26,9 +29,16 @@ FOOTER = "drawn from CARLA state (no rendering)   white = ego   blue = traffic  
 
 
 class BirdsEye:
-    def __init__(self, world: carla.World) -> None:
+    def __init__(self, world: carla.World, area: list[carla.Location] | None = None) -> None:
+        """[area]: draw only the roads around these places. A big map's whole base image does not fit in memory
+        (대치동's 2.5×3 km would be 1.4 GB)."""
         self.world = world
         waypoints = world.get_map().generate_waypoints(1.0)
+        if area:
+            lo_x, hi_x = min(a.x for a in area) - AREA_MARGIN_M, max(a.x for a in area) + AREA_MARGIN_M
+            lo_y, hi_y = min(a.y for a in area) - AREA_MARGIN_M, max(a.y for a in area) + AREA_MARGIN_M
+            waypoints = [w for w in waypoints
+                         if lo_x <= w.transform.location.x <= hi_x and lo_y <= w.transform.location.y <= hi_y]
         xs = [w.transform.location.x for w in waypoints]
         ys = [w.transform.location.y for w in waypoints]
         self.x0, self.y0 = min(xs) - MARGIN_M, min(ys) - MARGIN_M
