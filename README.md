@@ -1,5 +1,7 @@
 # 운전선생 (DriveTeacher)
 
+[![운전선생: 시험장에 가기 전에 어디서 감점되는지 압니다](assets/poster/driveteacher-banner.png)](https://kyusuncho.github.io/driveteacher/)
+
 > **소개 페이지: https://kyusuncho.github.io/driveteacher/**
 > 사용법, 강남운전면허시험장 C코스 리플레이 지도, 100점·86점·51점 주행 영상을 한 페이지에 모았습니다.
 
@@ -9,7 +11,7 @@
 - 주행 중: 화면에는 점수와 마지막 감점 한 줄만 나옵니다. Pleos TTS가 "진로변경 신호 불이행, 7점 감점되었습니다."처럼 이미 일어난 일만 말합니다.
 - 채점 항목은 차량 신호로 판정할 수 있는 12개와 실격 2개입니다. 정지 중 기어 미중립(4), 급조작·급출발(9), 출발 신호 안함·중지·계속(11~13), 엔진 브레이크 사용 미숙(18), 정지 때 미제동(20), 급브레이크 사용(21), 진로변경 신호 불이행·30미터 전 미신호·미유지·미중지(30~33)를 채점합니다. 실격은 제한속도 시속 10km 초과, 좌석안전띠 미착용입니다.
 
-![C코스 결과 비교: 100점, 86점, 51점](assets/experiments/submission/driveteacher-summary-poster.png)
+세로 홍보 포스터(인쇄·SNS용): [`assets/poster/driveteacher-poster.png`](assets/poster/driveteacher-poster.png)
 
 ## APK 위치
 
