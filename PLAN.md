@@ -40,7 +40,7 @@ Pleos Connect(AAOS 14) 앱입니다. 두 가지 모드가 있습니다.
   - GitHub: 접수 메일에 **저장소 주소와 최종 커밋 해시**를 적고, 심사는 그 커밋으로 합니다. 비공개 저장소는 Collaborator 초대가 필요 없습니다. 대신 **11/16(월)까지 공개로 바꾸고 11/23까지 공개를 유지**해야 가산점이 반영됩니다. 공개가 어려우면 소스와 APK 압축 파일의 링크를 마감 전에 메일로 보냅니다.
   - README에 **에뮬레이터 버전과 화면 규격**이 필수 항목으로 추가됐습니다. PPT, PDF, HTML 같은 참고 자료를 더 붙여도 되고, 영상 길이 제한은 없습니다.
   - 개발 범위: 공개 SDK(Vehicle, NaviHelper, TTS, STT, FusedLocation)만 씁니다. 미공개 SDK와 Pleos LLM SDK는 공모전 기간에 제공하지 않습니다. 2차 PT도 에뮬레이터로 합니다.
-- **제출물 준비 (11/15):** 서명 키를 저장소 밖에 만들었습니다(`~/.android/driveteacher-release.jks`, 비밀번호는 `~/.gradle/gradle.properties`). release APK `apk/kyusuncho_운전선생_release.apk`는 처음 설치하는 에뮬레이터에서 실행되는 것을 확인했습니다. `README.md`를 쓰고, 요약 영상 `assets/experiments/submission/`(2분 12초)을 만들었습니다. 채운 접수양식과 메일 초안은 `submission/`에 두고 git에서 뺐습니다. 저장소는 작성자 이메일을 가린 사본 이력으로 GitHub 비공개 저장소에 올립니다.
+- **제출물 준비 (11/15):** 서명 키를 저장소 밖에 만들었습니다(`~/.android/driveteacher-release.jks`, 비밀번호는 `~/.gradle/gradle.properties`). release APK `apk/kyusuncho_운전선생_release.apk`는 처음 설치하는 에뮬레이터에서 실행되는 것을 확인했습니다. `README.md`를 쓰고, 요약 영상 `assets/experiments/submission/`을 만들었습니다(밤에 51점 주행 전체를 10배속으로 넣어 3분 43초). 채운 접수양식과 메일 초안은 `submission/`에 두고 git에서 뺐습니다. 저장소는 작성자 이메일을 가린 사본 이력으로 GitHub 비공개 저장소에 올립니다.
 
 **심사**
 - 1차 기준: **차량특화성, 창의성, 기술 활용성, 사업성** (네 항목 모두 필수, 배점 비공개). 사업성에는 타깃 고객, 예상 MAU, 리텐션, 확대 계획 같은 내용이 예시로 나옴

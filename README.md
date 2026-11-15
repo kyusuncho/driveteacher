@@ -58,7 +58,7 @@
 
 | 영상 | 내용 |
 |---|---|
-| [요약 영상 (2분 12초)](assets/experiments/submission/driveteacher-summary.mp4) | 100점 주행 10배속, 86점 주행의 첫 감점(실제 속도), 세 결과 화면 비교 |
+| [요약 영상 (3분 43초)](assets/experiments/submission/driveteacher-summary.mp4) | 100점 주행과 51점 불합격 주행 전체(10배속), 86점 주행의 첫 감점(실제 속도), 세 결과 화면 비교 |
 | [100점 합격 (15분)](assets/experiments/carla-driveteacher-courseC-1115/carla-pleos-demo.mp4) | 7번의 회전 모두 신호. 감점 0건 |
 | [86점 합격 (14분 31초)](assets/experiments/carla-driveteacher-courseC-1115-86/carla-pleos-demo.mp4) | 2·6번째 회전에서 신호를 켜지 않음. 30번 진로변경 신호 불이행 2건 |
 | [51점 불합격 (15분 11초)](assets/experiments/carla-driveteacher-courseC-1115-51/carla-pleos-demo.mp4) | 7번 모두 신호를 켜지 않음. 같은 항목 7건 |
