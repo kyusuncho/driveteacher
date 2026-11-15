@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A guide-sign face: the white line inset from the edge and the straight-ahead arrow from ui/Signs.kt arrow().
+     Kept inside the 66dp safe zone so every launcher mask shape shows the whole line. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2.6"
+        android:pathData="M38,30 H70 A8,8 0 0 1 78,38 V70 A8,8 0 0 1 70,78 H38 A8,8 0 0 1 30,70 V38 A8,8 0 0 1 38,30 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,37 L64.2,51.3 L57.6,51.3 L57.6,71 L50.4,71 L50.4,51.3 L43.8,51.3 Z" />
+</vector>
